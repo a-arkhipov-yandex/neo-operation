@@ -1,6 +1,8 @@
 from os import getenv
 from dotenv import load_dotenv
 import telebot
+from telebot import types
+import re
 from log_lib import *
 
 ENV_BOTTOKEN = 'BOTTOKEN'
@@ -13,6 +15,9 @@ VERSION = '0.1'
 
 CMD_HELP = '/help'
 CMD_NEWACTION = '/newaction'
+CMD_SHOWACTIONS = '/showactions'
+CMD_COMPLETEACTION = '/completeaction'
+CMD_CANCELACTION = '/cancelaction'
 
 #============================
 # Common functions
@@ -49,7 +54,7 @@ def getBotToken(test):
 class NeoOperationBot:
     __bot = None
 
-    def initBot():
+    def initBot(self):
         # Check if bot is already initialized
         if (NeoOperationBot.isInitialized()):
             log(f'Bot is already initialized', LOG_WARNING)
@@ -62,6 +67,8 @@ class NeoOperationBot:
             exit()
         log(f'Bot initialized successfully (test={isTest})')
         NeoOperationBot.__bot = telebot.TeleBot(botToken)
+        NeoOperationBot.__bot.register_message_handler(self.messageHandler)
+        NeoOperationBot.__bot.register_callback_query_handler(self.buttonHandler,func=lambda message: re.match(fr'^somedata$', message.data))
 
     def isInitialized():
         return (NeoOperationBot.__bot != None)
@@ -70,7 +77,7 @@ class NeoOperationBot:
     def __init__(self):
         # Check if bot is initialized
         if (not NeoOperationBot.isInitialized()):
-            NeoOperationBot.initBot()
+            NeoOperationBot.initBot(self)
         self.bot = NeoOperationBot.__bot
 
     def startBot(self):
@@ -79,33 +86,44 @@ class NeoOperationBot:
             return
         try:
             log(f'Starting bot...')
+            #self.bot.set_update_listener(self.get_messages)
             self.bot.infinity_polling()
         except KeyboardInterrupt:
             log('Exiting by user request')
 
     # Message handler
-    def get_messages(self, messages):
+    def messageHandler(self, message):
         if (not NeoOperationBot.isInitialized()):
             log(f'Bot is not initialized - cannot start', LOG_ERROR)
             return
-        for message in messages:
-            # Check if there is cmd
-            if (message.text[0] == '/'):
-                return self.cmdHandler(message)
-            NeoOperationBot.__bot.send_message(message.from_user.id, 'Я вас не понимаю:(.')
-            NeoOperationBot.__bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
+        # Check if there is a CMD
+        if (message.text[0] == '/'):
+            return self.cmdHandler(message)
+        NeoOperationBot.__bot.send_message(message.from_user.id, 'Я вас не понимаю:(.')
+        NeoOperationBot.__bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
 
     def cmdHandler(self, message):
         bot = NeoOperationBot.__bot
         text = message.text.lower()
         if text == CMD_HELP:
             bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
+        elif text == CMD_NEWACTION:
+            self.newActionHandler(message)
+        elif text == CMD_SHOWACTIONS:
+            self.showActionsHandler(message)
+        elif text == CMD_COMPLETEACTION:
+            self.completeActionHandler(message)
+        elif text == CMD_CANCELACTION:
+            self.cancelActionHandler(message)
         else:
             bot.send_message(message.from_user.id, "Неизвестная команда.")
             bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
 
     # Returns help message
     def getHelpMessage(self, userName):
+        if (not NeoOperationBot.isInitialized()):
+            log(f'Bot is not initialized - cannot start', LOG_ERROR)
+            return
         ret = self.getWelcomeMessage(userName)
         return ret + '''
     Команды GuessImage_Bot:
@@ -120,3 +138,31 @@ class NeoOperationBot:
         Это боте "Neo Operation". Версия: {VERSION}
         '''
         return ret
+
+    # Test button
+    def showTestButton(self, message):
+        key1 = types.InlineKeyboardButton(text='Кнопка 1', callback_data="somedata")
+        key2 = types.InlineKeyboardButton(text='Кнопка 2', callback_data="somedata2")
+        keyboard = types.InlineKeyboardMarkup(); # keyboard
+        keyboard.add(key1)
+        keyboard.add(key2)
+        question = 'Что дальше?'
+        self.bot.send_message(message.from_user.id, text=question, reply_markup=keyboard)
+
+    def buttonHandler(self, message):
+        self.bot.send_message(message.from_user.id, f"Button pressed.{message.data}")
+
+    def newActionHandler(self, message):
+        if (not NeoOperationBot.isInitialized()):
+            log(f'Bot is not initialized - cannot start', LOG_ERROR)
+            return
+        self.bot.send_message(message.from_user.id, f"New action handler is not implemented yet")
+
+    def showActionsHandler(self, message):
+        pass
+
+    def completeActionHandler(self, message):
+        pass
+
+    def cancelActionHandler(self, message):
+        pass
