@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 import telebot
 from telebot import types
 import re
+from datetime import datetime as dt
+from zoneinfo import ZoneInfo
 from log_lib import *
 
 ENV_BOTTOKEN = 'BOTTOKEN'
@@ -48,6 +50,11 @@ def getBotToken(test):
 
     return token
 
+def getCurrentDateTime():
+    tzinfo=ZoneInfo('Europe/Moscow')
+    startTime = dt.now(tzinfo).strftime("%d-%m-%Y %H:%M:%S")
+    return startTime
+
 #=====================
 # Bot class
 #---------------------
@@ -90,6 +97,11 @@ class NeoOperationBot:
             self.bot.infinity_polling()
         except KeyboardInterrupt:
             log('Exiting by user request')
+
+    # Get default title
+    def getDefaultTitle(self):
+        datetimenow = getCurrentDateTime()
+        return f"Action from {datetimenow}"
 
     # Message handler
     def messageHandler(self, message):
@@ -156,7 +168,8 @@ class NeoOperationBot:
         if (not NeoOperationBot.isInitialized()):
             log(f'Bot is not initialized - cannot start', LOG_ERROR)
             return
-        self.bot.send_message(message.from_user.id, f"New action handler is not implemented yet")
+        self.bot.send_message(message.from_user.id, f"Пожалуйста, введите тескт задачи:")
+        # TODO: save current status - inputaction
 
     def showActionsHandler(self, message):
         pass
