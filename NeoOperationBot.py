@@ -6,6 +6,7 @@ import re
 from datetime import datetime as dt
 from zoneinfo import ZoneInfo
 from log_lib import *
+from db_lib import *
 
 ENV_BOTTOKEN = 'BOTTOKEN'
 ENV_BOTTOKENTEST = 'BOTTOKENTEST'
@@ -15,6 +16,7 @@ ENV_TESTBOT = 'TESTBOT'
 
 VERSION = '0.1'
 
+CMD_START = '/start'
 CMD_HELP = '/help'
 CMD_NEWACTION = '/newaction'
 CMD_SHOWACTIONS = '/showactions'
@@ -111,14 +113,65 @@ class NeoOperationBot:
         # Check if there is a CMD
         if (message.text[0] == '/'):
             return self.cmdHandler(message)
-        NeoOperationBot.__bot.send_message(message.from_user.id, 'Я вас не понимаю:(.')
-        NeoOperationBot.__bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
+        # Handle reply
+        ret = self.replyHandler(message)
+        if (not ret):
+            self.sendMessage(message.from_user.id, 'Я вас не понимаю:(.')
+            self.sendMessage(message.from_user.id, self.getHelpMessage(message.from_user.username))
+
+    # Check is user registered
+    def checkUser(self, username):
+        userId = Connection.getUserIdByName(username)
+        if (dbFound(userId)):
+            return True
+        return False
+
+    # Send message to user
+    def sendMessage(self, telegramid, text):
+        if (NeoOperationBot.isInitialized()):
+            NeoOperationBot.__bot.send_message(telegramid, text)
+
+    def replyHandler(self, message):
+        # Check current user state
+        username = message.from_user.username
+        id = message.from_user.id
+        if (not self.checkUser(username=username)):
+            self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            return False
+        state = Connection.getUserState(username)
+        if (state == STATE_ACTIONTEXT):
+            title = self.getDefaultTitle()
+            text = message.text
+            Connection.addAction(username=username,title=title, text=text, fromTxt='')
+            Connection.clearUserState(username=username)
+            self.sendMessage(id, 'Новая задача создана успешно.')
+            return True
+        return False # Nothing to handle
+
+    def startHandler(self, message):
+        username = message.from_user.username
+        telegramId = message.from_user.id
+        # Check if user exists
+        if (not self.checkUser(username=username)):
+            # Register new user if not registered yet
+            userId = Connection.addUser(username=username, telegramid=telegramId)
+            if (not userId):
+                log(f'Cannot register user {username}', LOG_ERROR)
+                self.sendMessage(telegramId, 'Ошибка при регистоации пользователя. Попробуйте позже.')
+            # Send welcome message
+            self.sendMessage(telegramId, 'Регистрация пользователя прошла успешно.')
+            self.helpHandler(message)
+        else:
+            # Show help message
+            self.helpHandler(message)
 
     def cmdHandler(self, message):
-        bot = NeoOperationBot.__bot
+        telegramid = message.from_user.id
         text = message.text.lower()
         if text == CMD_HELP:
-            bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
+            self.helpHandler(message)
+        elif text == CMD_START:
+            self.startHandler(message)
         elif text == CMD_NEWACTION:
             self.newActionHandler(message)
         elif text == CMD_SHOWACTIONS:
@@ -128,8 +181,12 @@ class NeoOperationBot:
         elif text == CMD_CANCELACTION:
             self.cancelActionHandler(message)
         else:
-            bot.send_message(message.from_user.id, "Неизвестная команда.")
-            bot.send_message(message.from_user.id, self.getHelpMessage(message.from_user.username))
+            self.sendMessage(telegramid, "Неизвестная команда.")
+            self.sendMessage(telegramid, self.getHelpMessage(message.from_user.username))
+
+    # /help cmd handler
+    def helpHandler(self, message):
+        self.sendMessage(message.from_user.id, self.getHelpMessage(message.from_user.username))
 
     # Returns help message
     def getHelpMessage(self, userName):
@@ -137,17 +194,18 @@ class NeoOperationBot:
             log(f'Bot is not initialized - cannot start', LOG_ERROR)
             return
         ret = self.getWelcomeMessage(userName)
-        return ret + '''
+        return ret + f'''
     Команды GuessImage_Bot:
-        /help - вывести помощь по каомандам (это сообщение)
-        /start - начать новую игру с текущими настройками (может вызываться на любом шаге)
-        /settings - установить настройки типа игры и сложности
+        {CMD_HELP} - вывести помощь по командам (это сообщение)
+        {CMD_START} - регистрация нового пользователя
+        {CMD_NEWACTION} - создать новую задачу
+        {CMD_SHOWACTIONS} - вывести все активные задачи
         '''
     # Get welcome message
     def getWelcomeMessage(self, userName):
         ret = f'''
         Добро пожаловать, {userName}!
-        Это боте "Neo Operation". Версия: {VERSION}
+        Это бот "Neo Operation". Версия: {VERSION}
         '''
         return ret
 
@@ -159,20 +217,30 @@ class NeoOperationBot:
         keyboard.add(key1)
         keyboard.add(key2)
         question = 'Что дальше?'
-        self.bot.send_message(message.from_user.id, text=question, reply_markup=keyboard)
+        self.sendMessage(message.from_user.id, text=question, reply_markup=keyboard)
 
     def buttonHandler(self, message):
-        self.bot.send_message(message.from_user.id, f"Button pressed.{message.data}")
+        self.sendMessage(message.from_user.id, f"Button pressed.{message.data}")
 
     def newActionHandler(self, message):
         if (not NeoOperationBot.isInitialized()):
             log(f'Bot is not initialized - cannot start', LOG_ERROR)
             return
-        self.bot.send_message(message.from_user.id, f"Пожалуйста, введите тескт задачи:")
-        # TODO: save current status - inputaction
+        self.sendMessage(message.from_user.id, f"Пожалуйста, введите текст задачи:")
+        Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
 
     def showActionsHandler(self, message):
-        pass
+        username = message.from_user.username
+        telegramid = message.from_user.id
+        # Check user first
+        if (not self.checkUser(username=username)):
+            self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            return False
+        # Get all active actions
+        actions = Connection.getActions(username=username, active=True)
+        for action in actions:
+            self.sendMessage(telegramid, f'Action {action["title"]}: {action["text"]}')
+        # TODO: show actions as buttons
 
     def completeActionHandler(self, message):
         pass
