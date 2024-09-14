@@ -159,7 +159,6 @@ class TestDB:
     def testActions(self):
         # Create action 1
         actionId1 = Connection.addAction(TestDB.testUserName1,'Test acton 1','Test test 1','')
-        # TODO: Check created log added
         logsCreated = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)
         resLogCreated = (len(logsCreated) > 0)
         # Create action 2
@@ -192,8 +191,6 @@ class TestDB:
         resListActions6 = Connection.getActions(username=TestDB.testUserName2, active=False)
         resListActionsAllUsers2 = Connection.getActions(active=False)
         # Delete all logs and actions
-        resDeleteLogs1 = Connection.deleteActionLogs(actionId1)
-        resDeleteLogs2 = Connection.deleteActionLogs(actionId2)
         resDelete1 = Connection.deleteAction(actionId1)
         resDelete2 = Connection.deleteAction(actionId2)
 
@@ -216,8 +213,6 @@ class TestDB:
         assert(resLogCreated)
         assert(resLogComplete)
         assert(resLogCancelled)
-        assert(resDeleteLogs1)
-        assert(resDeleteLogs2)
         assert(resDelete1)
         assert(resDelete2)
 

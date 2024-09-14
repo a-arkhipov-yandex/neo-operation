@@ -14,7 +14,9 @@ ENV_BOTTOKENTEST = 'BOTTOKENTEST'
 ENV_TESTDB = 'TESTDB'
 ENV_TESTBOT = 'TESTBOT'
 
-VERSION = '0.1'
+VERSION = '0.2'
+
+TITLETEXT_SEPARATOR = '@@@'
 
 CMD_START = '/start'
 CMD_HELP = '/help'
@@ -22,6 +24,13 @@ CMD_NEWACTION = '/newaction'
 CMD_SHOWACTIONS = '/showactions'
 CMD_COMPLETEACTION = '/completeaction'
 CMD_CANCELACTION = '/cancelaction'
+
+CALLBACK_ACTION_TAG = 'actionId:'
+CALLBACK_ACTIONCOMPLETE_TAG = 'completeActionId:'
+CALLBACK_ACTIONCANCEL_TAG = 'cancelActionId:'
+CALLBACK_ACTIONREMINDERSET_TAG = 'reminderSetActionId:'
+CALLBACK_ACTIONREMINDERSTOP_TAG = 'reminderStopActionId:'
+CALLBACK_ACTIONTITLECHANGE_TAG = 'titleChangeActionId:'
 
 #============================
 # Common functions
@@ -63,6 +72,33 @@ def getCurrentDateTime():
 class NeoOperationBot:
     __bot = None
 
+    def registerHandlers(self):
+        NeoOperationBot.__bot.register_message_handler(self.messageHandler)
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.actionButtonHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTION_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.completeActionHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONCOMPLETE_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.cancelActionHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONCANCEL_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.reminderSetActionHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONREMINDERSET_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.reminderStopActionHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONREMINDERSTOP_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.titleChangeActionHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONTITLECHANGE_TAG}\d+$', message.data)
+        )
+
     def initBot(self):
         # Check if bot is already initialized
         if (NeoOperationBot.isInitialized()):
@@ -76,18 +112,39 @@ class NeoOperationBot:
             exit()
         log(f'Bot initialized successfully (test={isTest})')
         NeoOperationBot.__bot = telebot.TeleBot(botToken)
-        NeoOperationBot.__bot.register_message_handler(self.messageHandler)
-        NeoOperationBot.__bot.register_callback_query_handler(self.buttonHandler,func=lambda message: re.match(fr'^somedata$', message.data))
+        self.registerHandlers()
 
     def isInitialized():
         return (NeoOperationBot.__bot != None)
 
     # Init bot
     def __init__(self):
+        self.forwardChache = {}
         # Check if bot is initialized
         if (not NeoOperationBot.isInitialized()):
             NeoOperationBot.initBot(self)
         self.bot = NeoOperationBot.__bot
+
+    def setForwardCache(self, username, text):
+        if (not NeoOperationBot.isInitialized()):
+            log(f'Bot is not initialized - set cache', LOG_ERROR)
+            return
+        self.forwardChache[username] = text
+        log(f'Set forward cache for user {username}: {text}')
+
+    def clearForwardCache(self, username):
+        if (not NeoOperationBot.isInitialized()):
+            log(f'Bot is not initialized - clear cache', LOG_ERROR)
+            return
+        if (self.forwardChache.get(username)):
+            self.forwardChache[username] = ''
+            log(f'Clear forward cache for user {username}')
+
+    def getForwardCache(self, username):
+        if (not NeoOperationBot.isInitialized()):
+            log(f'Bot is not initialized - get cache', LOG_ERROR)
+            return
+        return self.forwardChache.get(username)
 
     def startBot(self):
         if (not NeoOperationBot.isInitialized()):
@@ -101,9 +158,12 @@ class NeoOperationBot:
             log('Exiting by user request')
 
     # Get default title
-    def getDefaultTitle(self):
+    def generateActionTitle(self, fromTxt=None):
         datetimenow = getCurrentDateTime()
-        return f"Action from {datetimenow}"
+        additional = ''
+        if (fromTxt):
+            additional = f'от @{fromTxt} '
+        return f"Задача {additional}- {datetimenow}"
 
     # Message handler
     def messageHandler(self, message):
@@ -126,10 +186,36 @@ class NeoOperationBot:
             return True
         return False
 
+    # Check existance of action and it belongs to user
+    def checkUserAndAction(self, username, actionInfo):
+        if (actionInfo['username'] == username):
+            return True
+        return False
+
     # Send message to user
     def sendMessage(self, telegramid, text):
         if (NeoOperationBot.isInitialized()):
             NeoOperationBot.__bot.send_message(telegramid, text)
+
+    # Get forward nessage
+    def getFromTxt(self, message):
+        fromTxt = None
+        # Check fromard message
+        if (message.forward_origin):
+            fromTxt = message.forward_origin.sender_user.username
+        return fromTxt
+
+    def getTitleAndText(self, fromTxtTitle, fromTxtUser, txt):
+        title = ''
+        text = ''
+        tmp = txt.split(TITLETEXT_SEPARATOR)
+        if (len(tmp) != 2):
+            title = self.generateActionTitle(fromTxtTitle)
+            text = f'@{fromTxtUser}: {txt}'
+        else:
+            title = tmp[0]
+            text = f'@{fromTxtUser}: {tmp[1]}'
+        return (title, text)
 
     def replyHandler(self, message):
         # Check current user state
@@ -138,15 +224,26 @@ class NeoOperationBot:
         if (not self.checkUser(username=username)):
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return False
-        state = Connection.getUserState(username)
-        if (state == STATE_ACTIONTEXT):
-            title = self.getDefaultTitle()
+        
+        title = ''
+        text = ''
+        fromTxt = self.getFromTxt(message)
+        textByUser = self.getForwardCache(username=username)
+        self.clearForwardCache(username=username)
+        if (fromTxt and (textByUser and len(textByUser))): # there is text by user
             text = message.text
-            Connection.addAction(username=username,title=title, text=text, fromTxt='')
-            Connection.clearUserState(username=username)
-            self.sendMessage(id, 'Новая задача создана успешно.')
-            return True
-        return False # Nothing to handle
+            (title, text2) = self.getTitleAndText(fromTxtTitle=fromTxt, fromTxtUser=username, txt=textByUser)
+            text = f"@{fromTxt}: {text}\n{text2}"
+        else:
+            if (not fromTxt):
+                fromTxt = username
+            textByUser = message.text
+            (title, text) = self.getTitleAndText(fromTxtTitle=fromTxt, fromTxtUser=fromTxt, txt=textByUser)
+            text = f'{text}'
+        Connection.addAction(username=username, title=title, text=text, fromTxt=fromTxt)
+        Connection.clearUserState(username=username)
+        self.sendMessage(id, f'Новая задача "{title}" создана успешно.')
+        return True
 
     def startHandler(self, message):
         username = message.from_user.username
@@ -180,9 +277,17 @@ class NeoOperationBot:
             self.completeActionHandler(message)
         elif text == CMD_CANCELACTION:
             self.cancelActionHandler(message)
+        elif re.match('^/ф\s+\S+', text):
+            self.preForwardHandle(message)
         else:
             self.sendMessage(telegramid, "Неизвестная команда.")
             self.sendMessage(telegramid, self.getHelpMessage(message.from_user.username))
+
+    # Handler for text along with fowrarded message
+    def preForwardHandle(self, message):
+        text = message.text[3:] # Remove '/ф '
+        username = message.from_user.username
+        self.setForwardCache(username, text)
 
     # /help cmd handler
     def helpHandler(self, message):
@@ -209,24 +314,92 @@ class NeoOperationBot:
         '''
         return ret
 
-    # Test button
-    def showTestButton(self, message):
-        key1 = types.InlineKeyboardButton(text='Кнопка 1', callback_data="somedata")
-        key2 = types.InlineKeyboardButton(text='Кнопка 2', callback_data="somedata2")
+    # Get reminder description
+    def getReminderText(self, actionInfo):
+        text = 'Не установлено'
+        if (actionInfo['reminder']):
+            text = f'''
+                Установлено на "{actionInfo["reminder"]}"
+            '''
+        return text
+
+    # Action menu
+    def getActionMenu(self, actionId):
+        # Complete
+        key1 = types.InlineKeyboardButton(
+            text=f'Отметить задачу сделанной',
+            callback_data=f'{CALLBACK_ACTIONCOMPLETE_TAG}{actionId}'
+        )
+        # Cancel
+        key2 = types.InlineKeyboardButton(
+            text=f'Отменить задачу',
+            callback_data=f'{CALLBACK_ACTIONCANCEL_TAG}{actionId}'
+        )
+        # Set reminder
+        key3 = types.InlineKeyboardButton(
+            text=f'Установить напоминание на следующее утро',
+            callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}'
+        )
+        # Stop Reminder
+        key4 = types.InlineKeyboardButton(
+            text=f'Не напоминать больше',
+            callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
+        )
+        # TODO: add title change
+
         keyboard = types.InlineKeyboardMarkup(); # keyboard
         keyboard.add(key1)
         keyboard.add(key2)
-        question = 'Что дальше?'
-        self.sendMessage(message.from_user.id, text=question, reply_markup=keyboard)
+        keyboard.add(key3)
+        keyboard.add(key4)
+        return keyboard
 
-    def buttonHandler(self, message):
-        self.sendMessage(message.from_user.id, f"Button pressed.{message.data}")
+    # Extract action info from callback data
+    # Returns:
+    #   None - error during extraction
+    #   actionId - action id
+    def extractActionInfo(self, username, data):
+        fName = self.extractActionInfo.__name__
+        try:
+            actionId = int(data.split(':')[1])
+        except:
+            log(f'{fName}: Incorrect actionId provided: {data}')
+            return None
+        actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+        if (not dbFound(actionInfo)):
+            log(f'{fName}: Cannot find actionId provided: {username} - {actionId}',LOG_ERROR)
+            return None
+        return actionInfo
+
+    def actionButtonHandler(self, message):
+        fName = self.actionButtonHandler.__name__
+        telegramid = message.from_user.id
+        username = message.from_user.username
+        data = message.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        reminder = self.getReminderText(actionInfo)
+        text = f'''
+Задача:
+{actionInfo["title"]}
+Описание:
+{actionInfo["text"]}
+Напоминание: {reminder}
+
+        '''
+        self.sendMessage(message.from_user.id, text)
+        keyboard = self.getActionMenu(actionId=actionId)
+        self.bot.send_message(telegramid, text='Выберите действие с задачей:', reply_markup=keyboard)
 
     def newActionHandler(self, message):
+        fName = self.newActionHandler.__name__
         if (not NeoOperationBot.isInitialized()):
-            log(f'Bot is not initialized - cannot start', LOG_ERROR)
+            log(f'{fName}: Bot is not initialized', LOG_ERROR)
             return
-        self.sendMessage(message.from_user.id, f"Пожалуйста, введите текст задачи:")
+        self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '!!!'):")
         Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
 
     def showActionsHandler(self, message):
@@ -238,12 +411,83 @@ class NeoOperationBot:
             return False
         # Get all active actions
         actions = Connection.getActions(username=username, active=True)
-        for action in actions:
-            self.sendMessage(telegramid, f'Action {action["title"]}: {action["text"]}')
-        # TODO: show actions as buttons
+        keyboard = types.InlineKeyboardMarkup(); # keyboard
+        question = 'Выберите задачу для обработки:'
+        if (len(actions) == 0):
+            # No active actions
+            self.sendMessage(telegramid, f'У вас нет активных задач. Создайте при помощи {CMD_NEWACTION}')
+        else:
+            for action in actions:
+                key = types.InlineKeyboardButton(
+                    text=f'{action["title"]}',
+                    callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
+                )
+                keyboard.add(key)
+            self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
 
     def completeActionHandler(self, message):
-        pass
+        username = message.from_user.username
+        telegramid = message.from_user.id
+        data = message.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        # Complete action
+        ret = Connection.completeAction(actionId=actionId, username=username)
+        if (ret):
+            self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" помечена выполненой. Вы - молодец!')
+        else:
+            self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
 
     def cancelActionHandler(self, message):
-        pass
+        telegramid = message.from_user.id
+        username = message.from_user.username
+        data = message.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        ret = Connection.cancelAction(actionId=actionId, username=username)
+        if (ret):
+            self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" отменена.')
+        else:
+            self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
+
+    def reminderSetActionHandler(self, message):
+        telegramid = message.from_user.id
+        username = message.from_user.username
+        data = message.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        self.sendMessage(telegramid, f'Reminder Set action not implemented {message.data}')
+
+
+    def reminderStopActionHandler(self, message):
+        telegramid = message.from_user.id
+        username = message.from_user.username
+        data = message.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        
+        self.sendMessage(telegramid, f'Reminder Stop action not implemented {message.data}')
+
+    def titleChangeActionHandler(self, message):
+        telegramid = message.from_user.id
+        username = message.from_user.username
+        data = message.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        
+        self.sendMessage(telegramid, f'Title Change action not implemented {message.data}')

@@ -351,10 +351,19 @@ class Connection:
                     log(f'{fName}: Failed insert action {username} - {title}: {error}',LOG_ERROR)
             if (ret):
                 # Add log
-                Connection.addLog(actionId=ret, logType=LOGTYPE_CREATED)
+                Connection.addLog(actionId=ret, logType=LOGTYPE_CREATED, noCheck=True) # do not check action existance
         else:
             log(f'{fName}: Cannot get user from DB: {username}',LOG_ERROR)
         return ret
+
+    # Get action info
+    def getActionInfo(username, actionId):
+        actionInfo = Connection.getActions(username=username, actionId=actionId)
+        if (dbFound(actionInfo)):
+            actionInfo = actionInfo[0] # Extract the only item
+        else:
+            actionInfo = NOT_FOUND
+        return actionInfo
 
     # Get all or active (by default) actions for user username
     # Returns:
@@ -366,7 +375,7 @@ class Connection:
         addQuery = ''
         whereQuery = ''
         if (username or active or actionId):
-            whereQuery = ' where '
+            whereQuery = ' where l.logtype = 1 and '
         if (username):
             addQuery = 'u.name = %(un)s '
             params['un'] = username
@@ -384,7 +393,9 @@ class Connection:
             select a.id, a.userid, u.name, a.title, a.text, a.from, a.created, a.reminder, a.status, a.completedate
             from actions as a
             join users as u on u.id = a.userid
+            join logs as l on l.actionid = a.id
             {whereQuery} {addQuery}
+            order by l.time_stamp
         '''
         # Execute query
         actions = []
@@ -497,6 +508,8 @@ class Connection:
         # Check that action exist
         actionsInfo = Connection.getActions(actionId=actionId)
         if (dbFound(actionsInfo)):
+            # Delete action logs first
+            Connection.deleteActionLogs(actionId=actionId)
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = "DELETE from actions where id = %(a)s"
@@ -506,9 +519,6 @@ class Connection:
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
                     log(f'{fName}: Failed delete action {actionId}: {error}',LOG_ERROR)
-            # If delete sussussful remove all logs for this action
-            if (ret):
-                Connection.deleteActionLogs(actionId=actionId)
         else:
             log(f'{fName}: Cannot find action to delete {actionId}')
         return ret
@@ -670,19 +680,20 @@ class Connection:
 
     # Add log recored
     # Returns: True/False
-    def addLog(actionId, logType, comment=''):
+    def addLog(actionId, logType, comment='', noCheck=False):
         fName = Connection.addLog.__name__
         # Check log type first
         if (not dbLibCheckLogType(logType)):
             log(f'{fName}: Incorrect log type provided {logType}', LOG_ERROR)
             return False
-        # Check if action exists
-        actionInfo = Connection.getActions(actionId=actionId)
-        if (dbFound(actionInfo)): # action exist
-            pass
-        else:
-            log(f'{fName}: Cannot find action ID to add log {actionId}', LOG_ERROR)
-            return False
+        if (not noCheck):
+            # Check if action exists
+            actionInfo = Connection.getActions(actionId=actionId)
+            if (dbFound(actionInfo)): # action exist
+                pass
+            else:
+                log(f'{fName}: Cannot find action ID to add log {actionId}', LOG_ERROR)
+                return False
         query = '''
             insert into logs (actionid,logtype,comment,time_stamp) values (%(aId)s,%(lt)s,%(c)s,NOW())
         '''
