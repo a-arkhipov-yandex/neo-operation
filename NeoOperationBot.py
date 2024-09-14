@@ -4,6 +4,7 @@ import telebot
 from telebot import types
 import re
 from datetime import datetime as dt
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 from log_lib import *
 from db_lib import *
@@ -13,6 +14,8 @@ ENV_BOTTOKENTEST = 'BOTTOKENTEST'
 
 ENV_TESTDB = 'TESTDB'
 ENV_TESTBOT = 'TESTBOT'
+
+ENV_DEFAULTREMINDERTIME = "DEFAULTREMINDERTIME"
 
 VERSION = '0.2'
 
@@ -60,6 +63,13 @@ def getBotToken(test):
         token = getenv(ENV_BOTTOKENTEST)
 
     return token
+
+def getDefaultReminderTime():
+    load_dotenv()
+    defaultReminder = getenv(ENV_DEFAULTREMINDERTIME)
+    if (not defaultReminder):
+        defaultReminder == "09:00"
+    return defaultReminder
 
 def getCurrentDateTime():
     tzinfo=ZoneInfo('Europe/Moscow')
@@ -120,6 +130,8 @@ class NeoOperationBot:
     # Init bot
     def __init__(self):
         self.forwardChache = {}
+        self.defaultReminderTime = getDefaultReminderTime()
+
         # Check if bot is initialized
         if (not NeoOperationBot.isInitialized()):
             NeoOperationBot.initBot(self)
@@ -316,10 +328,12 @@ class NeoOperationBot:
 
     # Get reminder description
     def getReminderText(self, actionInfo):
-        text = 'Не установлено'
+        text = '''
+Не установлено
+        '''
         if (actionInfo['reminder']):
             text = f'''
-                Установлено на "{actionInfo["reminder"]}"
+Установлено на "{actionInfo["reminder"]}"
             '''
         return text
 
@@ -345,13 +359,18 @@ class NeoOperationBot:
             text=f'Не напоминать больше',
             callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
         )
-        # TODO: add title change
+        # Change title
+        key5 = types.InlineKeyboardButton(
+            text=f'Изменить заголовок задачи',
+            callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
+        )
 
         keyboard = types.InlineKeyboardMarkup(); # keyboard
         keyboard.add(key1)
         keyboard.add(key2)
         keyboard.add(key3)
         keyboard.add(key4)
+        keyboard.add(key5)
         return keyboard
 
     # Extract action info from callback data
@@ -465,8 +484,13 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
-        self.sendMessage(telegramid, f'Reminder Set action not implemented {message.data}')
-
+        reminder = self.getNextReminder()
+        ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
+        if (ret):
+            rTxt = self.getTimeDateTxt(reminder)
+            self.sendMessage(telegramid, f'Напоминание для задачи {actionInfo["title"]} установлено на {rTxt}.')
+        else:
+            self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
 
     def reminderStopActionHandler(self, message):
         telegramid = message.from_user.id
@@ -477,8 +501,11 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
-        
-        self.sendMessage(telegramid, f'Reminder Stop action not implemented {message.data}')
+        ret = Connection.clearReminder(username=username, actionId=actionId)
+        if (ret):
+            self.sendMessage(telegramid, f'Напоминание для задачи {actionInfo["title"]} удалено.')
+        else:
+            self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
 
     def titleChangeActionHandler(self, message):
         telegramid = message.from_user.id
@@ -489,5 +516,24 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
-        
+        # TODO: implement it
         self.sendMessage(telegramid, f'Title Change action not implemented {message.data}')
+
+    # Get next reminder datetime
+    # Returns: datetime object with new reminder
+    def getNextReminder(self, daysToDelay=1):
+        # Get current date
+        today = dt.now()
+        # Add one day
+        oneDay = timedelta(days=daysToDelay)
+        tomorrow = today + oneDay
+        # Set time to default time
+        (hours, minutes) = self.defaultReminderTime.split(':')
+        hours = int(hours)
+        minutes = int(minutes)
+        newTomorrow = dt(year=tomorrow.year,month=tomorrow.month,day=tomorrow.day,
+                         hour=hours,minute=minutes,second=0)
+        return newTomorrow
+
+    def getTimeDateTxt(self, reminder):
+        return reminder.strftime("%d-%m-%Y %H:%M:%S")

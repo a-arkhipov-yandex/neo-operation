@@ -768,3 +768,53 @@ class Connection:
                 logs.append(log)
         return logs
 
+    #=======================
+    # Reminder section
+    #-----------------------
+    # Set user state
+    # Return: True/False
+    def setReminder(username, actionId, reminder):
+        fName = Connection.setReminder.__name__
+        actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+        if (not dbFound(actionInfo)):
+            log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+            return False
+        ret = False
+        conn = Connection.getConnection()
+        with conn.cursor() as cur:
+            query = 'update actions set reminder = %(r)s where id = %(id)s'
+            try:
+                cur.execute(query,{'r':reminder,'id':actionId})
+                log(f'{fName}: Reminder set for user {username}, action {actionId}, reminder {reminder}')
+                ret = True
+            except (Exception, psycopg2.DatabaseError) as error:
+                log(f'{fName}: Failed set reminder for {username} - {actionId} - {reminder}: {error}',LOG_ERROR)
+        return ret
+    
+    def clearReminder(username, actionId):
+        fName = Connection.clearReminder.__name__
+        ret = Connection.setReminder(username=username, actionId=actionId, reminder=None)
+        if (ret):
+            log(f'{fName}: Reminder cleared for user {username} and action {actionId}')
+        else:
+            log(f'{fName}: Error clear reminder for user {username} and action {actionId}', LOG_ERROR)
+        return ret
+    
+    # Returns:
+    #   None - error
+    #   Reminder for acton actionId
+    def getReminder(username, actionId):
+        fName = Connection.getReminder.__name__
+        actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+        if (not dbFound(actionInfo)):
+            log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+            return None
+        query = 'select reminder from actions where id=%(aId)s'
+        params = {'aId':actionId}
+        ret = None
+        reminder = Connection.executeQuery(query=query, params=params)
+        if (dbFound(reminder)):
+            ret = reminder[0]
+        else:
+            log(f'{fName}: Cannot get reminder for user {username}, action {actionId}', LOG_ERROR)
+        return ret

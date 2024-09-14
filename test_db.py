@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import datetime as dt
 from db_lib import *
 
 class TestDB:
@@ -76,8 +77,6 @@ class TestDB:
     def testCheckUserNameFormat(self, p, expected_result):
         ret = dbLibCheckUserName(p)
         assert(ret == expected_result)
-
-    # TODO: check check statuses and check log types
 
     # Test getActionStatuses
     def testGetActionStatuses(self):
@@ -160,6 +159,10 @@ class TestDB:
         # Create action 1
         actionId1 = Connection.addAction(TestDB.testUserName1,'Test acton 1','Test test 1','')
         logsCreated = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)
+        resReminder1 = Connection.getReminder(TestDB.testUserName1, actionId1) # None
+        resSetReminderCorrect = Connection.setReminder(TestDB.testUserName1, actionId1, dt.now()) # True
+        resSetReminderInCorrect = Connection.setReminder(TestDB.testUserName1, actionId1, "20.sd12.d2024") # True
+        resReminder2 = Connection.getReminder(TestDB.testUserName1, actionId1) # not None
         resLogCreated = (len(logsCreated) > 0)
         # Create action 2
         actionId2 = Connection.addAction(TestDB.testUserName2,'Test acton 2','Test test 2','')
@@ -196,6 +199,10 @@ class TestDB:
 
         assert(actionId1 != None)
         assert(actionId2 != None)
+        assert(resReminder1 == None)
+        assert(resSetReminderCorrect == True)
+        assert(resReminder2 != None)
+        assert(resSetReminderInCorrect == False)
         assert(len(resListActions1) == 1)
         assert(len(resListActions2) == 1)
         assert(len(resListActions3) == 0)
