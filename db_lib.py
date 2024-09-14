@@ -299,7 +299,7 @@ class Connection:
     #----------------
     def parseActionData(rawAction):
         action = {}
-        if (dbFound(rawAction) and (len(rawAction) == 10)):
+        if (dbFound(rawAction) and (len(rawAction) == 11)):
             action['id'] = int(rawAction[0])
             action['userid'] = int(rawAction[1])
             action['username'] = rawAction[2]
@@ -310,6 +310,7 @@ class Connection:
             action['reminder'] = rawAction[7]
             action['status'] = rawAction[8]
             action['completedate'] = rawAction[9]
+            action['telegramid'] = rawAction[10]
         else:
             action = None
         return action
@@ -369,32 +370,32 @@ class Connection:
     # Returns:
     #   None - error or no user
     #   [{action1}, ...] - array of user actions
-    def getActions(username=None, active=False, actionId=None):
+    def getActions(username=None, active=False, actionId=None, withReminders=False):
         fName = Connection.getActions.__name__
         params = {}
         addQuery = ''
-        whereQuery = ''
-        if (username or active or actionId):
-            whereQuery = ' where l.logtype = 1 and '
+        whereQuery = f' where l.logtype = {LOGTYPE_CREATED} '
         if (username):
-            addQuery = 'u.name = %(un)s '
+            addQuery = ' and u.name = %(un)s '
             params['un'] = username
         if (active):
-            if (addQuery):
-                addQuery = addQuery + 'and '
-            addQuery = addQuery + 'a.status = %(st)s '
+            addQuery = addQuery + ' and a.status = %(st)s '
             params['st'] = ACTION_ACTIVE
         if (actionId):
-            if (addQuery):
-                addQuery = addQuery + 'and '
-            addQuery = addQuery + 'a.id = %(aId)s'
+            addQuery = addQuery + ' and a.id = %(aId)s'
             params['aId'] = actionId
+        # Handle reminders
+        reminderQuery = ''
+        if (withReminders):
+            reminderQuery = ' and a.reminder is not %(rem)s '
+            params['rem']=None
         query = f'''
-            select a.id, a.userid, u.name, a.title, a.text, a.from, a.created, a.reminder, a.status, a.completedate
+            select a.id, a.userid, u.name, a.title, a.text,
+                a.from, a.created, a.reminder, a.status, a.completedate, u.telegramid
             from actions as a
             join users as u on u.id = a.userid
             join logs as l on l.actionid = a.id
-            {whereQuery} {addQuery}
+            {whereQuery} {addQuery} {reminderQuery}
             order by l.time_stamp
         '''
         # Execute query

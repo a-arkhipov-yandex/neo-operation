@@ -127,6 +127,9 @@ class NeoOperationBot:
     def isInitialized():
         return (NeoOperationBot.__bot != None)
 
+    def getBot(self):
+        return self.__bot
+
     # Init bot
     def __init__(self):
         self.forwardChache = {}
