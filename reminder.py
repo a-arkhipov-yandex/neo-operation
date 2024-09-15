@@ -4,6 +4,7 @@ import telebot
 from telegram import Message, User, Chat
 from db_lib import *
 from log_lib import *
+from NeoOperationBot import *
 
 loopFlag = True
 SLEEP_INTERVAL = 10
@@ -23,8 +24,9 @@ def reminderTask(bot:telebot.TeleBot):
 
             # Show actions to do with reminder: remind later, mark completed, mark cancelled
 
-            # Clear reminder
-            Connection.clearReminder(username=actionInfo['username'], actionId=actionInfo['id'])
+            # Set reminder to the next day
+            nextReminderTime = getDefaultReminderTime()
+            Connection.setReminder(username=actionInfo['username'], actionId=actionInfo['id'], reminder=nextReminderTime)
 
             # TODO: Remove keyboard buttons after pressing
             pass

@@ -26,6 +26,7 @@ ACTION_COMPLETED = 2
 ACTION_CANCELLED = 3
 
 STATE_ACTIONTEXT = 1
+STATE_ACTIONTITLECHANGE = 2
 
 LOGTYPE_CREATED = 1
 LOGTYPE_CANCELLED = 2
@@ -469,12 +470,12 @@ class Connection:
     #   True - action completed successfully
     def completeOrCancelAction(actionId, status):
         fName = Connection.completeOrCancelAction.__name__
+        if (not Connection.isInitialized()):
+            log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
+            return False
         # Check new status first
         if (status != ACTION_COMPLETED and status != ACTION_CANCELLED):
             log(f"{fName}: Wrong status provided {actionId} - {status}",LOG_ERROR)
-            return False
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
             return False
         ret = False
         actionsInfo = Connection.getActions(actionId=actionId)
@@ -499,6 +500,38 @@ class Connection:
                     log(f'{fName}: Failed complete or cancel action {actionId}: {error}',LOG_ERROR)
         else:
             log(f"{fName}: Cannot find action {actionId}",LOG_ERROR)
+        return ret
+
+    # Update action title
+    # Returns:
+    #   False - error or no user or no action
+    #   True - action completed successfully
+    def udpdateActionTitle(username, actionId, newTitle):
+        fName = Connection.udpdateActionTitle.__name__
+        if (not Connection.isInitialized()):
+            log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
+            return False
+        ret = False
+        actionsInfo = Connection.getActions(actionId=actionId)
+        if (actionsInfo == None):
+            log(f'{fName}: cannot get action {actionId}: DB issue',LOG_ERROR)
+            return ret
+        if (dbFound(actionsInfo)):
+            conn = Connection.getConnection()
+            with conn.cursor() as cur:
+                query = 'update actions set title =%(t)s where id = %(id)s'
+                try:
+                    cur.execute(query,{'t':newTitle,'id':actionId})
+                    log(f'{fName}: Updated title for action: {actionId} - {newTitle}')
+                    ret = True
+                except (Exception, psycopg2.DatabaseError) as error:
+                    log(f'{fName}: Failed not update title for action {actionId} - {newTitle}: {error}',LOG_ERROR)
+        else:
+            log(f"{fName}: Cannot find action to update title {actionId}",LOG_ERROR)
+        if (ret):
+            # Log update
+            if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_UPDATED)):
+                log(f"{fName}: Cannot add log {LOGTYPE_UPDATED} for action {actionId}",LOG_ERROR)
         return ret
 
     # Delete action - returns True/False
@@ -531,7 +564,7 @@ class Connection:
     #---------------
     def parseUserData(rawUser):
         userInfo = {}
-        if (dbFound(rawUser) and (len(rawUser) == 4)):
+        if (dbFound(rawUser) and (len(rawUser) == 5)):
             userInfo['id'] = int(rawUser[0])
             userInfo['name'] = rawUser[1]
             userInfo['telegramid'] = rawUser[2]
@@ -539,6 +572,7 @@ class Connection:
                 userInfo['state'] = int(rawUser[3])
             except:
                 userInfo['state'] = None
+            userInfo['state_data'] = rawUser[4]
         else:
             userInfo = None
         return userInfo
@@ -603,7 +637,7 @@ class Connection:
         ret = dbLibCheckUserName(username)
         if (not ret):
             return NOT_FOUND
-        query = f"SELECT id, name, telegramid, state FROM users WHERE name = %(name)s"
+        query = f"SELECT id, name, telegramid, state, state_data FROM users WHERE name = %(name)s"
         ret = Connection.executeQuery(query,{'name':username})
         if (dbFound(ret)):
             ret = Connection.parseUserData(ret)
@@ -618,7 +652,7 @@ class Connection:
     
     # Set user state
     # Return: True/False
-    def setUserState(username, state):
+    def setUserState(username, state, data = None):
         fName = Connection.setUserState.__name__
         ret = dbLibCheckUserName(username)
         if (not ret):
@@ -632,11 +666,15 @@ class Connection:
         if ((state != None) and (not dbLibCheckUserState(state))):
             log(f'{fName}: Unknown state {state} for user {username}', LOG_ERROR)
             return False
+        params = {'st':state,'id':userInfo['id']}
+        addQuery = ''
+        addQuery = f', state_data = %(da)s'
+        params['da'] = data
         conn = Connection.getConnection()
         with conn.cursor() as cur:
-            query = 'update users set state = %(st)s where id = %(id)s'
+            query = f'update users set state = %(st)s{addQuery} where id = %(id)s'
             try:
-                cur.execute(query,{'st':state,'id':userInfo['id']})
+                cur.execute(query, params)
                 log(f'{fName}: Updated user state: {username} - {state}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
@@ -646,7 +684,7 @@ class Connection:
     # Clear user state
     # Return: True/False
     def clearUserState(username):
-        return Connection.setUserState(username=username, state=None)
+        return Connection.setUserState(username=username, state=None, data=None)
 
     # Delete user - returns True/False
     def deleteUser(userId):

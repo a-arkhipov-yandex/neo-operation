@@ -27,13 +27,14 @@ CMD_NEWACTION = '/newaction'
 CMD_SHOWACTIONS = '/showactions'
 CMD_COMPLETEACTION = '/completeaction'
 CMD_CANCELACTION = '/cancelaction'
+CMD_SHOWREMINDERS = '/showreminders'
 
 CALLBACK_ACTION_TAG = 'actionId:'
 CALLBACK_ACTIONCOMPLETE_TAG = 'completeActionId:'
 CALLBACK_ACTIONCANCEL_TAG = 'cancelActionId:'
 CALLBACK_ACTIONREMINDERSET_TAG = 'reminderSetActionId:'
 CALLBACK_ACTIONREMINDERSTOP_TAG = 'reminderStopActionId:'
-CALLBACK_ACTIONTITLECHANGE_TAG = 'titleChangeActionId:'
+CALLBACK_ACTIONTITLECHANGE_TAG = 'titleChangeTitle:'
 
 #============================
 # Common functions
@@ -76,11 +77,28 @@ def getCurrentDateTime():
     startTime = dt.now(tzinfo).strftime("%d-%m-%Y %H:%M:%S")
     return startTime
 
+# Get next reminder datetime
+# Returns: datetime object with new reminder
+def getNextReminder(daysToDelay=1):
+    # Get current date
+    today = dt.now()
+    # Add one day
+    oneDay = timedelta(days=daysToDelay)
+    tomorrow = today + oneDay
+    # Set time to default time
+    (hours, minutes) = NeoOperationBot.defaultReminderTime.split(':')
+    hours = int(hours)
+    minutes = int(minutes)
+    newTomorrow = dt(year=tomorrow.year,month=tomorrow.month,day=tomorrow.day,
+                        hour=hours,minute=minutes,second=0)
+    return newTomorrow
+
 #=====================
 # Bot class
 #---------------------
 class NeoOperationBot:
     __bot = None
+    defaultReminderTime = None
 
     def registerHandlers(self):
         NeoOperationBot.__bot.register_message_handler(self.messageHandler)
@@ -133,7 +151,7 @@ class NeoOperationBot:
     # Init bot
     def __init__(self):
         self.forwardChache = {}
-        self.defaultReminderTime = getDefaultReminderTime()
+        NeoOperationBot.defaultReminderTime = getDefaultReminderTime()
 
         # Check if bot is initialized
         if (not NeoOperationBot.isInitialized()):
@@ -233,13 +251,38 @@ class NeoOperationBot:
         return (title, text)
 
     def replyHandler(self, message):
+        fName = self.replyHandler.__name__
         # Check current user state
         username = message.from_user.username
         id = message.from_user.id
         if (not self.checkUser(username=username)):
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
-            return False
+            return True
         
+        state = Connection.getUserState(username=username)
+        if (state == STATE_ACTIONTITLECHANGE):
+            # Handle title change here
+            newTitle = message.text
+            # Get action ID from DB
+            userInfo = Connection.getUserInfoByName(username=username)
+            actionId = int(userInfo['state_data'])
+            actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+            if (not dbFound(actionInfo)):
+                log(f'{fName}: Cannot find action id {actionId} for user {username}')
+                self.sendMessage(id, 'Ошибка при изменении заголовка. Попробуйте позже.')
+                return True
+            # update title
+            ret = Connection.udpdateActionTitle(username=username, actionId=actionId, newTitle=newTitle)
+            if (not ret):
+                log(f'{fName}: Error updating title action {actionId} for user {username}', LOG_ERROR)
+                self.sendMessage(id, 'Произошла ошибка - не могу поменять заголовок. Попробуйте позже')
+            else:
+                log(f'{fName}: Successfully changed action title: action {actionId}, new title {newTitle}')
+                self.sendMessage(id, f'Установлен новый заголовок "{newTitle}"')
+            # Clear state
+            Connection.clearUserState(username=username)
+            return True
+
         title = ''
         text = ''
         fromTxt = self.getFromTxt(message)
@@ -279,6 +322,9 @@ class NeoOperationBot:
 
     def cmdHandler(self, message):
         telegramid = message.from_user.id
+        username = message.from_user.username
+        # Clear state
+        Connection.clearUserState(username=username)
         text = message.text.lower()
         if text == CMD_HELP:
             self.helpHandler(message)
@@ -292,6 +338,8 @@ class NeoOperationBot:
             self.completeActionHandler(message)
         elif text == CMD_CANCELACTION:
             self.cancelActionHandler(message)
+        elif text == CMD_SHOWREMINDERS:
+            self.showRemindersHandler(message)
         elif re.match('^/ф\s+\S+', text):
             self.preForwardHandle(message)
         else:
@@ -320,6 +368,7 @@ class NeoOperationBot:
         {CMD_START} - регистрация нового пользователя
         {CMD_NEWACTION} - создать новую задачу
         {CMD_SHOWACTIONS} - вывести все активные задачи
+        {CMD_SHOWREMINDERS} - вывести все задачи с истекшими напоминаниями
         '''
     # Get welcome message
     def getWelcomeMessage(self, userName):
@@ -424,6 +473,41 @@ class NeoOperationBot:
         self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '!!!'):")
         Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
 
+    def titleChangeTitle(self, message):
+        fName = self.titleChangeTitle.__name__
+        username = message.from_user.username
+        if (not NeoOperationBot.isInitialized()):
+            log(f'{fName}: Bot is not initialized', LOG_ERROR)
+            return
+        self.sendMessage(message.from_user.id, f"Пожалуйста, введите новый заголовок задачи:")
+        Connection.setUserState(message.from_user.username, STATE_ACTIONTITLECHANGE)
+        ret = Connection.setUserState(username=username, state=STATE_ACTIONTITLECHANGE)
+        if (not ret):
+            log(f'{fName}: Error savign state {STATE_ACTIONTITLECHANGE} for user {username}')
+
+    def showRemindersHandler(self, message):
+        username = message.from_user.username
+        telegramid = message.from_user.id
+        # Check user first
+        if (not self.checkUser(username=username)):
+            self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            return False
+        # Get all active actions
+        actions = Connection.getActionsWithExpiredReminders(username=username)
+        keyboard = types.InlineKeyboardMarkup(); # keyboard
+        question = 'Выберите задачу для обработки:'
+        if (len(actions) == 0):
+            # No active actions
+            self.sendMessage(telegramid, f'У вас нет активных задач с истекшим напоминанием. Создайте при помощи {CMD_NEWACTION}')
+        else:
+            for action in actions:
+                key = types.InlineKeyboardButton(
+                    text=f'{action["title"]}',
+                    callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
+                )
+                keyboard.add(key)
+            self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
+
     def showActionsHandler(self, message):
         username = message.from_user.username
         telegramid = message.from_user.id
@@ -487,7 +571,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
-        reminder = self.getNextReminder()
+        reminder = getNextReminder()
         ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
         if (ret):
             rTxt = self.getTimeDateTxt(reminder)
@@ -511,6 +595,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
 
     def titleChangeActionHandler(self, message):
+        fName = self.titleChangeActionHandler.__name__
         telegramid = message.from_user.id
         username = message.from_user.username
         data = message.data
@@ -518,25 +603,14 @@ class NeoOperationBot:
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
-        actionId = actionInfo['id']
-        # TODO: implement it
-        self.sendMessage(telegramid, f'Title Change action not implemented {message.data}')
-
-    # Get next reminder datetime
-    # Returns: datetime object with new reminder
-    def getNextReminder(self, daysToDelay=1):
-        # Get current date
-        today = dt.now()
-        # Add one day
-        oneDay = timedelta(days=daysToDelay)
-        tomorrow = today + oneDay
-        # Set time to default time
-        (hours, minutes) = self.defaultReminderTime.split(':')
-        hours = int(hours)
-        minutes = int(minutes)
-        newTomorrow = dt(year=tomorrow.year,month=tomorrow.month,day=tomorrow.day,
-                         hour=hours,minute=minutes,second=0)
-        return newTomorrow
+        title = actionInfo['title']
+        # save user state and data
+        ret = Connection.setUserState(username=username, state=STATE_ACTIONTITLECHANGE, data=actionInfo['id'])
+        if (not ret):
+            log(f'{fName}: Cannot save state {STATE_ACTIONTITLECHANGE} and data {actionInfo["id"]} for {username}')
+            self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
+        else:
+            self.sendMessage(telegramid, f'Введите новый заголовок для задачи {title}:')
 
     def getTimeDateTxt(self, reminder):
         return reminder.strftime("%d-%m-%Y %H:%M:%S")

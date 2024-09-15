@@ -141,7 +141,7 @@ class TestDB:
         res3 = Connection.addUser(testIncorrectUserName3,1)
         res4 = Connection.getUserIdByName('nonexisting_user')
         assert(not res1)
-        assert(resUserInfo1 and len(resUserInfo1) == 4)
+        assert(resUserInfo1 and len(resUserInfo1) == 5)
         assert(resUserState == None)
         assert(not resIncorrectUserState)
         assert(not resIncorrectState)
@@ -158,6 +158,13 @@ class TestDB:
     def testActions(self):
         # Create action 1
         actionId1 = Connection.addAction(TestDB.testUserName1,'Test acton 1','Test test 1','')
+        newTitle = "newT"
+        resTitleChange = Connection.udpdateActionTitle(TestDB.testUserName1, actionId=actionId1, newTitle=newTitle)
+        assert(resTitleChange)
+        logsUpdated = Connection.getLogs(actionId=actionId1, logType=LOGTYPE_UPDATED)
+        assert(len(logsUpdated) > 0)
+        actionInfo1 = Connection.getActionInfo(TestDB.testUserName1, actionId=actionId1)
+        assert(actionInfo1['title'] == newTitle)
         logsCreated = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)
         resReminder1 = Connection.getReminder(TestDB.testUserName1, actionId1) # None
         actionWithReminders1 = Connection.getActionsWithExpiredReminders(username=TestDB.testUserName1)
