@@ -15,17 +15,20 @@ def reminderTask(bot:telebot.TeleBot):
     # infinite loop
     while(loopFlag):
         sleep(SLEEP_INTERVAL)
-        log(f'{fName}: Reminder task wake up...')
         # Get all actions with reminders
-        actions = Connection.getActions(withReminders=True, active=True)
+        actions = Connection.getActionsWithExpiredReminders()
         for actionInfo in actions:
             bot.send_message(actionInfo['telegramid'], f'Reminder: Action: {actionInfo["title"]}')
             # TODO: make more fancy message
 
             # Show actions to do with reminder: remind later, mark completed, mark cancelled
 
+            # Clear reminder
+            Connection.clearReminder(username=actionInfo['username'], actionId=actionInfo['id'])
+
             # TODO: Remove keyboard buttons after pressing
             pass
         lenReminders = len(actions)
-        log(f'Handled {lenReminders} reminders. Sleeping...')
+        if (lenReminders != 0):
+            log(f'{fName}: Handled {lenReminders} reminders. Sleeping...')
     log(f'{fName}: Reminder thread stopped')

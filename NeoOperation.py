@@ -18,6 +18,7 @@ def main():
     # Start bot
     bot.startBot()
     # Finish thread
+    
     loopFlag = False
     thread.join()
     Connection.closeConnection()

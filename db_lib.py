@@ -387,8 +387,7 @@ class Connection:
         # Handle reminders
         reminderQuery = ''
         if (withReminders):
-            reminderQuery = ' and a.reminder is not %(rem)s '
-            params['rem']=None
+            reminderQuery = ' and a.reminder < NOW() '
         query = f'''
             select a.id, a.userid, u.name, a.title, a.text,
                 a.from, a.created, a.reminder, a.status, a.completedate, u.telegramid
@@ -414,6 +413,9 @@ class Connection:
             if (actionId):
                 actions = NOT_FOUND
         return actions
+
+    def getActionsWithExpiredReminders(username=None):
+        return Connection.getActions(username=username, active=True, withReminders=True)
 
     # Complete action for user username
     # Returns:
@@ -488,9 +490,9 @@ class Connection:
 
             conn = Connection.getConnection()
             with conn.cursor() as cur:
-                query = 'update actions set completedate = NOW(), status=%(st)s where id = %(id)s'
+                query = 'update actions set completedate = NOW(), status=%(st)s , reminder=%(rem)s where id = %(id)s'
                 try:
-                    cur.execute(query,{'st':status,'id':actionId})
+                    cur.execute(query,{'st':status,'id':actionId, 'rem':None})
                     log(f'{fName}: Updated action: {actionId} - {status}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
@@ -773,12 +775,17 @@ class Connection:
     # Reminder section
     #-----------------------
     # Set user state
+    # Input: timedate object - for set/ None - for cancel
     # Return: True/False
     def setReminder(username, actionId, reminder):
         fName = Connection.setReminder.__name__
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
         if (not dbFound(actionInfo)):
             log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+            return False
+        # Check that reminder is active
+        if ((actionInfo['status'] != ACTION_ACTIVE) and (reminder != None)):
+            log(f'{fName}: Cannot set reminder for NOT active action {username} - {actionId} - {reminder}', LOG_ERROR)
             return False
         ret = False
         conn = Connection.getConnection()
@@ -790,6 +797,12 @@ class Connection:
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
                 log(f'{fName}: Failed set reminder for {username} - {actionId} - {reminder}: {error}',LOG_ERROR)
+        if (ret):
+            # Add log
+            if (reminder == None):
+                Connection.addLog(actionId=actionId,logType=LOGTYPE_REMINDERSTOP)
+            else:
+                Connection.addLog(actionId=actionId,logType=LOGTYPE_REMINDERSET)
         return ret
     
     def clearReminder(username, actionId):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 from db_lib import *
 
 class TestDB:
@@ -160,12 +160,20 @@ class TestDB:
         actionId1 = Connection.addAction(TestDB.testUserName1,'Test acton 1','Test test 1','')
         logsCreated = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)
         resReminder1 = Connection.getReminder(TestDB.testUserName1, actionId1) # None
+        actionWithReminders1 = Connection.getActionsWithExpiredReminders(username=TestDB.testUserName1)
+        resActionWithReminders1 = (len(actionWithReminders1) == 0)
         resSetReminderCorrect = Connection.setReminder(TestDB.testUserName1, actionId1, dt.now()) # True
         resSetReminderInCorrect = Connection.setReminder(TestDB.testUserName1, actionId1, "20.sd12.d2024") # True
         resReminder2 = Connection.getReminder(TestDB.testUserName1, actionId1) # not None
         resLogCreated = (len(logsCreated) > 0)
         # Create action 2
         actionId2 = Connection.addAction(TestDB.testUserName2,'Test acton 2','Test test 2','')
+        actionId3 = Connection.addAction(TestDB.testUserName2,'Test acton 3','Test test 3','')
+        oneHour = timedelta(hours=1)
+        Connection.setReminder(TestDB.testUserName2, actionId3, dt.now()-oneHour) # True
+        Connection.setReminder(TestDB.testUserName2, actionId2, "20.12.2034") # True
+        actionsWithReminders2 = Connection.getActionsWithExpiredReminders(username=TestDB.testUserName2)
+        Connection.deleteAction(actionId3)
         # Get list of active actions (must be 1)
         resListActions1 = Connection.getActions(username=TestDB.testUserName1, active=True)
         # Get list of all actions (must be 1)
@@ -175,6 +183,8 @@ class TestDB:
         # Complete action 1
         resCompleteActionWrongUser = Connection.completeAction(username=TestDB.testUserName2, actionId=actionId1)
         resComplete = Connection.completeAction(username=TestDB.testUserName1, actionId=actionId1)
+        resReminderCompleted = Connection.getReminder(TestDB.testUserName1, actionId1) # None
+        resSetReminderNotActive1 = Connection.setReminder(TestDB.testUserName1, actionId1, dt.now()) # True
         logsComplete = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_COMPLETED)
         resLogComplete = (len(logsComplete) > 0)
         resCompleteNotexisting = Connection.completeAction(username=TestDB.testUserName1, actionId=1000000)
@@ -185,6 +195,8 @@ class TestDB:
         # Cancel action 2
         resCancelActionWrongUser = Connection.completeAction(username=TestDB.testUserName1, actionId=actionId2)
         resCancel = Connection.cancelAction(username=TestDB.testUserName2, actionId=actionId2)
+        resReminderCancelled = Connection.getReminder(TestDB.testUserName2, actionId2) # None
+        resSetReminderNotActive2 = Connection.setReminder(TestDB.testUserName2, actionId2, dt.now()) # True
         logsCancelled = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)
         resLogCancelled = (len(logsCancelled) > 0)
         resCancelNonexisting = Connection.cancelAction(username=TestDB.testUserName1, actionId=100000000)
@@ -200,9 +212,15 @@ class TestDB:
         assert(actionId1 != None)
         assert(actionId2 != None)
         assert(resReminder1 == None)
+        assert(resReminderCompleted == None)
+        assert(resReminderCancelled == None)
         assert(resSetReminderCorrect == True)
         assert(resReminder2 != None)
         assert(resSetReminderInCorrect == False)
+        assert(resActionWithReminders1)
+        assert(len(actionsWithReminders2) == 1)
+        assert(resSetReminderNotActive1 == False)
+        assert(resSetReminderNotActive2 == False)
         assert(len(resListActions1) == 1)
         assert(len(resListActions2) == 1)
         assert(len(resListActions3) == 0)
