@@ -19,17 +19,20 @@ def reminderTask(bot:telebot.TeleBot):
         # Get all actions with reminders
         actions = Connection.getActionsWithExpiredReminders()
         for actionInfo in actions:
-            bot.send_message(actionInfo['telegramid'], f'Reminder: Action: {actionInfo["title"]}')
-            # TODO: make more fancy message
-
+            actionId = actionInfo['id']
+            username = actionInfo['username']
+            telegramid = actionInfo['telegramid']
+            reminderText = "\U00002757 Reminder:" + getActionInfoText(actionInfo=actionInfo)
+            bot.send_message(telegramid, reminderText)
             # Show actions to do with reminder: remind later, mark completed, mark cancelled
-
-            # Set reminder to the next day
-            nextReminderTime = getDefaultReminderTime()
-            Connection.setReminder(username=actionInfo['username'], actionId=actionInfo['id'], reminder=nextReminderTime)
-
-            # TODO: Remove keyboard buttons after pressing
-            pass
+            menuKeyboard = getActionMenu(actionId=actionId,reminder=True)
+            message = bot.send_message(telegramid, text='Выберите действие с задачей:', reply_markup=menuKeyboard)
+            message_id = message.id
+            chat_id = message.chat.id
+            # Save chat_id and message_id to hide later
+            Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}')
+            # Mark reminder as shown
+            Connection.markReminderAsShown(username=username,actionId=actionId)
         lenReminders = len(actions)
         if (lenReminders != 0):
             log(f'{fName}: Handled {lenReminders} reminders. Sleeping...')

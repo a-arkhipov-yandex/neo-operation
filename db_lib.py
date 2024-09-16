@@ -34,6 +34,7 @@ LOGTYPE_COMPLETED = 3
 LOGTYPE_UPDATED = 4
 LOGTYPE_REMINDERSET = 5
 LOGTYPE_REMINDERSTOP = 6
+LOGTYPE_REMINDERSHOWN = 7
 
 #=======================
 # Common functions section
@@ -300,7 +301,7 @@ class Connection:
     #----------------
     def parseActionData(rawAction):
         action = {}
-        if (dbFound(rawAction) and (len(rawAction) == 11)):
+        if (dbFound(rawAction) and (len(rawAction) == 13)):
             action['id'] = int(rawAction[0])
             action['userid'] = int(rawAction[1])
             action['username'] = rawAction[2]
@@ -312,6 +313,10 @@ class Connection:
             action['status'] = rawAction[8]
             action['completedate'] = rawAction[9]
             action['telegramid'] = rawAction[10]
+            action['shown'] = rawAction[11]
+            if (not action['shown']):
+                action['shown'] = False
+            action['buttons'] = rawAction[12]
         else:
             action = None
         return action
@@ -371,7 +376,7 @@ class Connection:
     # Returns:
     #   None - error or no user
     #   [{action1}, ...] - array of user actions
-    def getActions(username=None, active=False, actionId=None, withReminders=False):
+    def getActions(username=None, active=False, actionId=None, withReminders=False, shown=None):
         fName = Connection.getActions.__name__
         params = {}
         addQuery = ''
@@ -389,9 +394,12 @@ class Connection:
         reminderQuery = ''
         if (withReminders):
             reminderQuery = ' and a.reminder < NOW() '
+            if (shown != None):
+                addQuery = addQuery + ' and a.shown = %(aSh)s'
+                params['aSh'] = shown
         query = f'''
-            select a.id, a.userid, u.name, a.title, a.text,
-                a.from, a.created, a.reminder, a.status, a.completedate, u.telegramid
+            select a.id, a.userid, u.name, a.title, a.text, a.from, a.created,
+                a.reminder, a.status, a.completedate, u.telegramid, a.shown, a.buttons
             from actions as a
             join users as u on u.id = a.userid
             join logs as l on l.actionid = a.id
@@ -415,8 +423,13 @@ class Connection:
                 actions = NOT_FOUND
         return actions
 
+    # Get actions with reminders which were not shown before
     def getActionsWithExpiredReminders(username=None):
-        return Connection.getActions(username=username, active=True, withReminders=True)
+        return Connection.getActions(username=username, active=True, withReminders=True, shown=False)
+
+    # Get actions with reminders which were shown before
+    def getActionsWithShownExpiredReminders(username=None):
+        return Connection.getActions(username=username, active=True, withReminders=True, shown=True)
 
     # Complete action for user username
     # Returns:
@@ -491,9 +504,11 @@ class Connection:
 
             conn = Connection.getConnection()
             with conn.cursor() as cur:
-                query = 'update actions set completedate = NOW(), status=%(st)s , reminder=%(rem)s where id = %(id)s'
+                query = '''update actions set completedate = NOW(), status=%(st)s, shown=%(sh)s,
+                reminder=%(rem)s where id = %(id)s
+            '''
                 try:
-                    cur.execute(query,{'st':status,'id':actionId, 'rem':None})
+                    cur.execute(query,{'st':status,'id':actionId, 'rem':None, 'sh':None})
                     log(f'{fName}: Updated action: {actionId} - {status}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
@@ -509,12 +524,12 @@ class Connection:
     def udpdateActionTitle(username, actionId, newTitle):
         fName = Connection.udpdateActionTitle.__name__
         if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
+            log(f"{fName}: Cannot apdate title for action {actionId} - connection is not initialized",LOG_ERROR)
             return False
         ret = False
         actionsInfo = Connection.getActions(actionId=actionId)
         if (actionsInfo == None):
-            log(f'{fName}: cannot get action {actionId}: DB issue',LOG_ERROR)
+            log(f'{fName}: cannot update action title for action {actionId}: DB issue',LOG_ERROR)
             return ret
         if (dbFound(actionsInfo)):
             conn = Connection.getConnection()
@@ -533,6 +548,37 @@ class Connection:
             if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_UPDATED)):
                 log(f"{fName}: Cannot add log {LOGTYPE_UPDATED} for action {actionId}",LOG_ERROR)
         return ret
+
+    # Update action buttons
+    # Returns:
+    #   False - error or no user or no action
+    #   True - update completed successfully
+    def udpdateActionButtons(username, actionId, buttons):
+        fName = Connection.udpdateActionButtons.__name__
+        if (not Connection.isInitialized()):
+            log(f"{fName}: Cannot save buttons for action {actionId} - connection is not initialized",LOG_ERROR)
+            return False
+        ret = False
+        actionsInfo = Connection.getActions(actionId=actionId)
+        if (actionsInfo == None):
+            log(f'{fName}: cannot update action {actionId}: DB issue',LOG_ERROR)
+            return ret
+        if (dbFound(actionsInfo)):
+            conn = Connection.getConnection()
+            with conn.cursor() as cur:
+                query = 'update actions set buttons =%(t)s where id = %(id)s'
+                try:
+                    cur.execute(query,{'t':buttons,'id':actionId})
+                    log(f'{fName}: Updated buttons for action: {actionId} - {buttons}')
+                    ret = True
+                except (Exception, psycopg2.DatabaseError) as error:
+                    log(f'{fName}: Failed not update title for action {actionId} - {buttons}: {error}',LOG_ERROR)
+        else:
+            log(f"{fName}: Cannot find action to update buttons {actionId}",LOG_ERROR)
+        return ret
+    
+    def clearActionButtons(username, actionId):
+        return (Connection.udpdateActionButtons(username=username,actionId=actionId, buttons=None))
 
     # Delete action - returns True/False
     def deleteAction(actionId):
@@ -826,11 +872,15 @@ class Connection:
             log(f'{fName}: Cannot set reminder for NOT active action {username} - {actionId} - {reminder}', LOG_ERROR)
             return False
         ret = False
+        params = {'r':reminder,'id':actionId}
+        addQuery = ', shown=%(sh)s'
+        params['sh'] = False
+
         conn = Connection.getConnection()
         with conn.cursor() as cur:
-            query = 'update actions set reminder = %(r)s where id = %(id)s'
+            query = f'update actions set reminder = %(r)s{addQuery} where id = %(id)s'
             try:
-                cur.execute(query,{'r':reminder,'id':actionId})
+                cur.execute(query, params)
                 log(f'{fName}: Reminder set for user {username}, action {actionId}, reminder {reminder}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
@@ -843,6 +893,35 @@ class Connection:
                 Connection.addLog(actionId=actionId,logType=LOGTYPE_REMINDERSET)
         return ret
     
+    # Mark reminder as shown
+    # Input: username, actionId
+    # Return: True/False
+    def markReminderAsShown(username, actionId):
+        fName = Connection.markReminderAsShown.__name__
+        actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+        if (not dbFound(actionInfo)):
+            log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+            return False
+        # Check that reminder is active
+        if (actionInfo['status'] != ACTION_ACTIVE or actionInfo['reminder'] == None):
+            log(f'{fName}: Cannot mark reminder as shown for NOT active action {username} - {actionId}', LOG_ERROR)
+            return False
+        ret = False
+        params = {'sh':True,'id':actionId}
+        conn = Connection.getConnection()
+        with conn.cursor() as cur:
+            query = f'update actions set shown = %(sh)s where id = %(id)s'
+            try:
+                cur.execute(query, params)
+                log(f'{fName}: Reminder marked as shown for user {username}, action {actionId}')
+                ret = True
+            except (Exception, psycopg2.DatabaseError) as error:
+                log(f'{fName}: Failed mark reminder as shown for {username} - {actionId}: {error}',LOG_ERROR)
+        if (ret):
+            # Add log
+            Connection.addLog(actionId=actionId,logType=LOGTYPE_REMINDERSHOWN)
+        return ret
+
     def clearReminder(username, actionId):
         fName = Connection.clearReminder.__name__
         ret = Connection.setReminder(username=username, actionId=actionId, reminder=None)

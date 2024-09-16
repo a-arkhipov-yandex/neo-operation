@@ -17,7 +17,7 @@ ENV_TESTBOT = 'TESTBOT'
 
 ENV_DEFAULTREMINDERTIME = "DEFAULTREMINDERTIME"
 
-VERSION = '0.2'
+VERSION = '0.3'
 
 TITLETEXT_SEPARATOR = '@@@'
 
@@ -92,6 +92,66 @@ def getNextReminder(daysToDelay=1):
     newTomorrow = dt(year=tomorrow.year,month=tomorrow.month,day=tomorrow.day,
                         hour=hours,minute=minutes,second=0)
     return newTomorrow
+
+# Action menu
+# If reminder=True - hide buttons after press
+def getActionMenu(actionId, reminder=False):
+    # Complete
+    key1 = types.InlineKeyboardButton(
+        text=f'\U00002705 Отметить задачу сделанной',
+        callback_data=f'{CALLBACK_ACTIONCOMPLETE_TAG}{actionId}'
+    )
+    # Cancel
+    key2 = types.InlineKeyboardButton(
+        text=f'\U0000274C Отменить задачу',
+        callback_data=f'{CALLBACK_ACTIONCANCEL_TAG}{actionId}'
+    )
+    # Set reminder
+    key3 = types.InlineKeyboardButton(
+        text=f'\U0001F514 Установить напоминание на следующее утро',
+        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}'
+    )
+    # Stop Reminder
+    key4 = types.InlineKeyboardButton(
+        text=f'\U0001F515 Не напоминать больше',
+        callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
+    )
+    if (not reminder):
+        # Change title
+        key5 = types.InlineKeyboardButton(
+            text=f'\U0001F58B Изменить заголовок задачи',
+            callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
+        )
+
+    keyboard = types.InlineKeyboardMarkup(); # keyboard
+    keyboard.add(key1)
+    keyboard.add(key2)
+    keyboard.add(key3)
+    keyboard.add(key4)
+    if (not reminder):
+        keyboard.add(key5)
+    return keyboard
+
+    # Get reminder description
+def getReminderText(actionInfo):
+    text = '''
+\U0001F6AB Не установлено
+    '''
+    if (actionInfo['reminder']):
+        text = f'''
+\U000023F0 Установлено на "{actionInfo["reminder"]}"
+        '''
+    return text
+
+def getActionInfoText(actionInfo):
+    reminder = getReminderText(actionInfo)
+    text = f'''
+\U0001F3AF Задача: {actionInfo["title"]}
+\U0001F4DC Описание:
+{actionInfo["text"]}
+\U0000231B Напоминание: {reminder}
+    '''
+    return text
 
 #=====================
 # Bot class
@@ -378,53 +438,6 @@ class NeoOperationBot:
         '''
         return ret
 
-    # Get reminder description
-    def getReminderText(self, actionInfo):
-        text = '''
-Не установлено
-        '''
-        if (actionInfo['reminder']):
-            text = f'''
-Установлено на "{actionInfo["reminder"]}"
-            '''
-        return text
-
-    # Action menu
-    def getActionMenu(self, actionId):
-        # Complete
-        key1 = types.InlineKeyboardButton(
-            text=f'Отметить задачу сделанной',
-            callback_data=f'{CALLBACK_ACTIONCOMPLETE_TAG}{actionId}'
-        )
-        # Cancel
-        key2 = types.InlineKeyboardButton(
-            text=f'Отменить задачу',
-            callback_data=f'{CALLBACK_ACTIONCANCEL_TAG}{actionId}'
-        )
-        # Set reminder
-        key3 = types.InlineKeyboardButton(
-            text=f'Установить напоминание на следующее утро',
-            callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}'
-        )
-        # Stop Reminder
-        key4 = types.InlineKeyboardButton(
-            text=f'Не напоминать больше',
-            callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
-        )
-        # Change title
-        key5 = types.InlineKeyboardButton(
-            text=f'Изменить заголовок задачи',
-            callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
-        )
-
-        keyboard = types.InlineKeyboardMarkup(); # keyboard
-        keyboard.add(key1)
-        keyboard.add(key2)
-        keyboard.add(key3)
-        keyboard.add(key4)
-        keyboard.add(key5)
-        return keyboard
-
     # Extract action info from callback data
     # Returns:
     #   None - error during extraction
@@ -442,28 +455,29 @@ class NeoOperationBot:
             return None
         return actionInfo
 
-    def actionButtonHandler(self, message):
+    def actionButtonHandler(self, callback:types.CallbackQuery):
         fName = self.actionButtonHandler.__name__
-        telegramid = message.from_user.id
-        username = message.from_user.username
-        data = message.data
+        telegramid = callback.from_user.id
+        username = callback.from_user.username
+        data = callback.data
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(f'{fName}: Cannot get action from data: {data}')
             return
         actionId = actionInfo['id']
-        reminder = self.getReminderText(actionInfo)
-        text = f'''
-Задача:
-{actionInfo["title"]}
-Описание:
-{actionInfo["text"]}
-Напоминание: {reminder}
+        reminderText = getActionInfoText(actionInfo=actionInfo)
+        self.sendMessage(callback.from_user.id, reminderText)
+        keyboard = getActionMenu(actionId=actionId)
+        message_sent = self.bot.send_message(telegramid,
+                                             text='Выберите действие с задачей:',
+                                             reply_markup=keyboard,
+                                             parse_mode='MarkdownV2')
+        # Save chat_id and message_id to hide later
+        message_id = message_sent.id
+        chat_id = telegramid
+        Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}')
 
-        '''
-        self.sendMessage(message.from_user.id, text)
-        keyboard = self.getActionMenu(actionId=actionId)
-        self.bot.send_message(telegramid, text='Выберите действие с задачей:', reply_markup=keyboard)
 
     def newActionHandler(self, message):
         fName = self.newActionHandler.__name__
@@ -493,7 +507,7 @@ class NeoOperationBot:
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return False
         # Get all active actions
-        actions = Connection.getActionsWithExpiredReminders(username=username)
+        actions = Connection.getActionsWithShownExpiredReminders(username=username)
         keyboard = types.InlineKeyboardMarkup(); # keyboard
         question = 'Выберите задачу для обработки:'
         if (len(actions) == 0):
@@ -525,7 +539,7 @@ class NeoOperationBot:
         else:
             for action in actions:
                 key = types.InlineKeyboardButton(
-                    text=f'{action["title"]}',
+                    text=f'\U0001F4DA {action["title"]}',
                     callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
                 )
                 keyboard.add(key)
@@ -543,6 +557,9 @@ class NeoOperationBot:
         # Complete action
         ret = Connection.completeAction(actionId=actionId, username=username)
         if (ret):
+            # Remove keyboard if set
+            self.removeActionKeyboard(actionInfo['buttons'])
+            Connection.clearActionButtons(username=username,actionId=actionId)
             self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" помечена выполненой. Вы - молодец!')
         else:
             self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
@@ -558,6 +575,9 @@ class NeoOperationBot:
         actionId = actionInfo['id']
         ret = Connection.cancelAction(actionId=actionId, username=username)
         if (ret):
+            # Remove keyboard if set
+            self.removeActionKeyboard(actionInfo['buttons'])
+            Connection.clearActionButtons(username=username,actionId=actionId)
             self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" отменена.')
         else:
             self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
@@ -575,7 +595,10 @@ class NeoOperationBot:
         ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
         if (ret):
             rTxt = self.getTimeDateTxt(reminder)
-            self.sendMessage(telegramid, f'Напоминание для задачи {actionInfo["title"]} установлено на {rTxt}.')
+            # Remove keyboard if set
+            self.removeActionKeyboard(actionInfo['buttons'])
+            Connection.clearActionButtons(username=username,actionId=actionId)
+            self.sendMessage(telegramid, f'Напоминание для задачи "{actionInfo["title"]}" установлено на {rTxt}.')
         else:
             self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
 
@@ -590,9 +613,23 @@ class NeoOperationBot:
         actionId = actionInfo['id']
         ret = Connection.clearReminder(username=username, actionId=actionId)
         if (ret):
+            # Remove keyboard if set
+            self.removeActionKeyboard(actionInfo['buttons'])
+            Connection.clearActionButtons(username=username,actionId=actionId)
             self.sendMessage(telegramid, f'Напоминание для задачи {actionInfo["title"]} удалено.')
         else:
             self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
+
+    def removeActionKeyboard(self, keyboardInfo):
+        fName = self.removeActionKeyboard.__name__
+        if (keyboardInfo):
+            res = keyboardInfo.split('|')
+            if (len(res) != 2):
+                log(f'{fName}: error getting message and chat: {keyboardInfo}', LOG_ERROR)
+                return
+            message_id = int(res[0])
+            chat_id = int(res[1])
+            self.bot.delete_message(message_id=message_id, chat_id=chat_id)
 
     def titleChangeActionHandler(self, message):
         fName = self.titleChangeActionHandler.__name__

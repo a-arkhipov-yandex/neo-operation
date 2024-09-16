@@ -248,6 +248,71 @@ class TestDB:
         assert(resDelete1)
         assert(resDelete2)
 
+    def testReminders(self):
+        usename = TestDB.testUserName1
+        # Create action 1
+        aId1 = Connection.addAction(username=usename,title="t1",text="text1",fromTxt=None)
+        assert(aId1)
+        buttons = "19239232343"
+        ret = Connection.udpdateActionButtons(username=usename,actionId=aId1,buttons=buttons)
+        assert(ret)
+        actionInfo = Connection.getActionInfo(username=usename,actionId=aId1)
+        assert(actionInfo['buttons'] == buttons)
+        ret = Connection.clearActionButtons(username=usename,actionId=aId1)
+        assert(ret)
+        actionInfo = Connection.getActionInfo(username=usename,actionId=aId1)
+        assert(actionInfo['buttons'] == None)
+        # Create action 2
+        aId2 = Connection.addAction(username=usename,title="t2",text="text2",fromTxt=None)
+        assert(aId2)
+        # Show actions with expired reminders not shown - 0
+        exNotShown = Connection.getActionsWithExpiredReminders(username=usename)
+        assert(len(exNotShown) == 0)
+        # Show actions with expired reminders shown - 0
+        exShown = Connection.getActionsWithShownExpiredReminders(username=usename)
+        assert(len(exShown) == 0)
+        # Set reminder to the 1 day ago
+        diff = timedelta(days=1)
+        setRem = Connection.setReminder(username=usename, actionId=aId1,reminder=dt.now()-diff)
+        assert(setRem)
+        # Show actions with expired reminders not shown - 1
+        exNotShown = Connection.getActionsWithExpiredReminders(username=usename)
+        assert(len(exNotShown) == 1)
+        # Show actions with expired reminders shown - 0
+        exShown = Connection.getActionsWithShownExpiredReminders(username=usename)
+        assert(len(exShown) == 0)
+        # Mark reminder as shown
+        markRem = Connection.markReminderAsShown(username=usename, actionId=aId1)
+        assert(markRem)
+        # Show actions with expired reminders not shown - 0
+        exNotShown = Connection.getActionsWithExpiredReminders(username=usename)
+        assert(len(exNotShown) == 0)
+        # Show actions with expired reminders shown - 1
+        exShown = Connection.getActionsWithShownExpiredReminders(username=usename)
+        assert(len(exShown) == 1)
+        # Move reminder to 1 hours ago
+        diff = timedelta(hours=3)
+        setRem = Connection.setReminder(username=usename, actionId=aId1,reminder=dt.now()-diff)
+        assert(setRem)
+        # Show actions with expired reminders not shown - 1
+        exNotShown = Connection.getActionsWithExpiredReminders(username=usename)
+        assert(len(exNotShown) == 1)
+        # Show actions with expired reminders shown - 1
+        exShown = Connection.getActionsWithShownExpiredReminders(username=usename)
+        assert(len(exShown) == 0)
+        # Mark action completed
+        resCom = Connection.completeAction(username=usename,actionId=aId1)
+        assert(resCom)
+        # Show actions with expired reminders not shown - 0
+        exNotShown = Connection.getActionsWithExpiredReminders(username=usename)
+        assert(len(exNotShown) == 0)
+        # Show actions with expired reminders shown - 0
+        exShown = Connection.getActionsWithShownExpiredReminders(username=usename)
+        assert(len(exShown) == 0)
+        # Cleanup
+        assert(Connection.deleteAction(aId2))
+        assert(Connection.deleteAction(aId1))
+
     def testClenup(seft):
         # Remove test user
         resDelete1 = False
