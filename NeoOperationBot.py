@@ -423,7 +423,7 @@ class NeoOperationBot:
             return
         ret = self.getWelcomeMessage(userName)
         return ret + f'''
-    Команды GuessImage_Bot:
+    Команды NeoOperation_Bot:
         {CMD_HELP} - вывести помощь по командам (это сообщение)
         {CMD_START} - регистрация нового пользователя
         {CMD_NEWACTION} - создать новую задачу

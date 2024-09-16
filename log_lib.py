@@ -26,7 +26,7 @@ LOG_LEVELS = {
     LOG_DEBUG: 7
 }
 
-class GuessImageLog:
+class Log:
     logCurrentLevel = LOG_INFO
     logFileName = ''
     logHandle = None
@@ -49,7 +49,7 @@ class GuessImageLog:
             f = open(logFile, 'a')
             tzinfo=ZoneInfo('Europe/Moscow')
             startTime = dt.now(tzinfo).strftime("%d-%m-%Y %H:%M:%S")
-            f.write(f'{startTime}: GuessImage_bot started'+"\n")
+            f.write(f'{startTime}: NeoOperation_bot started'+"\n")
         except Exception as error:
             log(f'Cannot open "{logFile}": {error}', LOG_ERROR)
         f.close()
@@ -61,48 +61,48 @@ def initLog(logFile=None, printToo=False):
         logFile = getenv(ENV_LOGFILE)
         if (not logFile):
             logFile = DEFAULT_LOGFILE
-    GuessImageLog.logFileName = logFile
+    Log.logFileName = logFile
     # Read log level from ENV
     logLevel = getenv(ENV_LOGLEVEL)
     if (logLevel):
         # Check that this level exist
         ret = LOG_LEVELS.get(logLevel)
         if (ret): # ENV log level exists
-            GuessImageLog.logCurrentLevel = logLevel
+            Log.logCurrentLevel = logLevel
     # Check if need to printout messages
     printTooEnv = getenv(ENV_PRINTTOO)
     if (printTooEnv and printTooEnv == 'True'):
         printToo = True
-    GuessImageLog.logFileRotation(logFile)
+    Log.logFileRotation(logFile)
     # Open log file for writing
     try:
         f = open(logFile, 'w')
-        GuessImageLog.logHandle = f
+        Log.logHandle = f
     except Exception as error:
         log(f'Cannot open "{logFile}": {error}', LOG_ERROR)
     if (printToo == True):
-        GuessImageLog.printToo = printToo
-    GuessImageLog.logStart()
-    log(f'Log initialization complete: log file={GuessImageLog.logFileName} | log level={GuessImageLog.logCurrentLevel}')
+        Log.printToo = printToo
+    Log.logStart()
+    log(f'Log initialization complete: log file={Log.logFileName} | log level={Log.logCurrentLevel}')
 
 def log(str, logLevel=LOG_INFO):
     # Check log level first
-    if (LOG_LEVELS[logLevel] > LOG_LEVELS[GuessImageLog.logCurrentLevel]):
+    if (LOG_LEVELS[logLevel] > LOG_LEVELS[Log.logCurrentLevel]):
         return # Do not print
-    if (not GuessImageLog.logHandle):
+    if (not Log.logHandle):
         print(str)
     else:
         # Get date and time
         tzinfo=ZoneInfo('Europe/Moscow')
         time = dt.now(tzinfo).strftime("%d-%m-%Y %H:%M:%S")
         logStr = f'[{time}]:{logLevel}:{str}'
-        GuessImageLog.logHandle.write(logStr+"\n")
-        GuessImageLog.logHandle.flush()
+        Log.logHandle.write(logStr+"\n")
+        Log.logHandle.flush()
         # Print message if set
-        if (GuessImageLog.printToo == True):
+        if (Log.printToo == True):
             print(logStr)
 
 def closeLog():
-    if (GuessImageLog.logHandle):
+    if (Log.logHandle):
         log(f'Closing log')
-        GuessImageLog.logHandle.close()
+        Log.logHandle.close()
