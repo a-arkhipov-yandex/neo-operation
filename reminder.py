@@ -1,7 +1,5 @@
-from datetime import datetime
 from time import sleep
 import telebot
-from telegram import Message, User, Chat
 from db_lib import *
 from log_lib import *
 from NeoOperationBot import *
