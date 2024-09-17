@@ -8,6 +8,7 @@ from NeoOperationBot import *
 # Main section
 #---------------
 def main():
+    global loopFlag
     initLog()
     TESTCONNECTION = isTestDB()
     Connection.initConnection(test=TESTCONNECTION)
@@ -18,7 +19,6 @@ def main():
     # Start bot
     bot.startBot()
     # Finish thread
-    
     loopFlag = False
     thread.join()
     Connection.closeConnection()

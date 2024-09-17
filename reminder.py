@@ -7,7 +7,6 @@ from NeoOperationBot import *
 loopFlag = True
 SLEEP_INTERVAL = 10
 
-
 def reminderTask(bot:telebot.TeleBot):
     fName = reminderTask.__name__
     log(f'{fName}: Reminder thread is started')
