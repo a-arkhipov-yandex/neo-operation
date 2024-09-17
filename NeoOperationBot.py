@@ -415,7 +415,7 @@ class NeoOperationBot:
             self.cancelActionHandler(message)
         elif text == CMD_SHOWREMINDERS:
             self.showRemindersHandler(message)
-        elif re.match('^/ф\s+\S+', text):
+        elif re.match(r'^/ф\s+\S+', text):
             self.preForwardHandle(message)
         else:
             self.sendMessage(telegramid, "Неизвестная команда.")
