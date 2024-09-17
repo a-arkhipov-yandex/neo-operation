@@ -5,7 +5,7 @@ from log_lib import *
 from NeoOperationBot import *
 
 loopFlag = True
-SLEEP_INTERVAL = 10
+SLEEP_INTERVAL = 5
 
 def reminderTask(bot:telebot.TeleBot):
     fName = reminderTask.__name__
@@ -15,6 +15,8 @@ def reminderTask(bot:telebot.TeleBot):
         sleep(SLEEP_INTERVAL)
         # Get all actions with reminders
         actions = Connection.getActionsWithExpiredReminders()
+        if (not actions):
+            continue
         for actionInfo in actions:
             actionId = actionInfo['id']
             username = actionInfo['username']

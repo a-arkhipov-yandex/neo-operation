@@ -261,9 +261,9 @@ class NeoOperationBot:
                 self.bot.infinity_polling()
             except KeyboardInterrupt:
                 log('Exiting by user request')
+                break
             except requests.exceptions.ReadTimeout as error:
                 log(f'startBot: exception: {error}', LOG_ERROR)
-            continue
 
     # Get default title
     def generateActionTitle(self, fromTxt=None):
@@ -373,9 +373,16 @@ class NeoOperationBot:
             textByUser = message.text
             (title, text) = self.getTitleAndText(fromTxtTitle=fromTxt, fromTxtUser=fromTxt, txt=textByUser)
             text = f'{text}'
-        Connection.addAction(username=username, title=title, text=text, fromTxt=fromTxt)
-        Connection.clearUserState(username=username)
+        actionId = Connection.addAction(username=username, title=title, text=text, fromTxt=fromTxt)
+        if (not actionId):
+            log(f'{fName}: Cannot create action for {username}')
+            self.sendMessage(telegramid=id, text='Ошибка при создании задачи. Попробуйте позже')
+            return False
         self.sendMessage(id, f'Новая задача "{title}" создана успешно.')
+        Connection.clearUserState(username=username)
+        # Add reminder to next day
+        actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+        self.setReminder(actionInfo=actionInfo)
         return True
 
     def startHandler(self, message):
@@ -499,7 +506,7 @@ class NeoOperationBot:
         if (not NeoOperationBot.isInitialized()):
             log(f'{fName}: Bot is not initialized', LOG_ERROR)
             return
-        self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '!!!'):")
+        self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '{TITLETEXT_SEPARATOR}'):")
         Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
 
     def titleChangeTitle(self, callback:types.CallbackQuery):
@@ -597,6 +604,29 @@ class NeoOperationBot:
         else:
             self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
 
+    # If reminder is not provider set it to the next day
+    # Returns: True/False
+    def setReminder(self, actionInfo, reminder=None):
+        fName = self.setReminder.__name__
+        username = actionInfo['username']
+        telegramid = actionInfo['telegramid']
+        actionId = actionInfo['id']
+        retVal = False
+        if (reminder == None):
+            reminder = getNextReminder()
+        ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
+        if (ret):
+            rTxt = self.getTimeDateTxt(reminder)
+            # Remove keyboard if set
+            self.removeActionKeyboard(actionInfo['buttons'])
+            Connection.clearActionButtons(username=username,actionId=actionId)
+            self.sendMessage(telegramid, f'Напоминание для задачи "{actionInfo["title"]}" установлено на {rTxt}.')
+            retVal = True
+        else:
+            self.sendMessage(telegramid, 'Произошла ошибка при установке напоминания. Попробуйте позже.')
+            log(f'{fName}: Error setting reminder {username} - {actionId} - {reminder}')
+        return retVal
+
     def reminderSetActionHandler(self, callback:types.CallbackQuery):
         telegramid = callback.from_user.id
         username = callback.from_user.username
@@ -605,17 +635,7 @@ class NeoOperationBot:
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
-        actionId = actionInfo['id']
-        reminder = getNextReminder()
-        ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
-        if (ret):
-            rTxt = self.getTimeDateTxt(reminder)
-            # Remove keyboard if set
-            self.removeActionKeyboard(actionInfo['buttons'])
-            Connection.clearActionButtons(username=username,actionId=actionId)
-            self.sendMessage(telegramid, f'Напоминание для задачи "{actionInfo["title"]}" установлено на {rTxt}.')
-        else:
-            self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
+        self.setReminder(actionInfo=actionInfo)
 
     def reminderStopActionHandler(self, callback:types.CallbackQuery):
         telegramid = callback.from_user.id
