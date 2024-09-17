@@ -161,8 +161,13 @@ class TestDB:
         newTitle = "newT"
         resTitleChange = Connection.udpdateActionTitle(TestDB.testUserName1, actionId=actionId1, newTitle=newTitle)
         assert(resTitleChange)
-        logsUpdated = Connection.getLogs(actionId=actionId1, logType=LOGTYPE_UPDATED)
+        logsUpdated = Connection.getLogs(actionId=actionId1, logType=LOGTYPE_TITLEUPDATED)
         assert(len(logsUpdated) > 0)
+        newText = "newT"
+        resAddText = Connection.udpdateActionText(TestDB.testUserName1, actionId=actionId1, addText=newText)
+        assert(resAddText)
+        logsAdded = Connection.getLogs(actionId=actionId1, logType=LOGTYPE_TEXTADDED)
+        assert(len(logsAdded) > 0)
         actionInfo1 = Connection.getActionInfo(TestDB.testUserName1, actionId=actionId1)
         assert(actionInfo1['title'] == newTitle)
         logsCreated = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)

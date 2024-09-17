@@ -37,6 +37,7 @@ CALLBACK_ACTIONREMINDERSET_TAG = 'reminderSetActionId:'
 CALLBACK_ACTIONREMINDERSTOP_TAG = 'reminderStopActionId:'
 CALLBACK_ACTIONTITLECHANGE_TAG = 'titleChangeTitle:'
 CALLBACK_ACTIONHIDEMENU_TAG = 'hideMenu:'
+CALLBACK_ACTIONTEXTADD_TAG = 'textAdd:'
 
 #============================
 # Common functions
@@ -124,8 +125,12 @@ def getActionMenu(actionId, reminder=False):
             text=f'\U0001F58B Изменить заголовок задачи',
             callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
         )
-    # Hide menu
     key6 = types.InlineKeyboardButton(
+        text=f'\U0001F4DD Добавить информацию в задачу',
+        callback_data=f'{CALLBACK_ACTIONTEXTADD_TAG}{actionId}'
+    )
+    # Hide menu
+    key7 = types.InlineKeyboardButton(
         text=f'\U00002716 Скрыть меню (ничего не делать)',
         callback_data=f'{CALLBACK_ACTIONHIDEMENU_TAG}{actionId}'
     )
@@ -138,6 +143,7 @@ def getActionMenu(actionId, reminder=False):
     if (not reminder):
         keyboard.add(key5)
     keyboard.add(key6)
+    keyboard.add(key7)
     return keyboard
 
     # Get reminder description
@@ -198,6 +204,11 @@ class NeoOperationBot:
             self.hideMenuHandler,
             func=lambda message: re.match(fr'^{CALLBACK_ACTIONHIDEMENU_TAG}\d+$', message.data)
         )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.textAddHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONTEXTADD_TAG}\d+$', message.data)
+        )
+
 
     def initBot(self):
         # Check if bot is already initialized
@@ -333,7 +344,6 @@ class NeoOperationBot:
         if (not self.checkUser(username=username)):
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return True
-        
         state = Connection.getUserState(username=username)
         if (state == STATE_ACTIONTITLECHANGE):
             # Handle title change here
@@ -357,7 +367,30 @@ class NeoOperationBot:
             # Clear state
             Connection.clearUserState(username=username)
             return True
-
+        elif (state == STATE_ACTIONTEXTADD):
+            # Handle add text here
+            # Get timestamp
+            curDate = getCurrentDateTime()
+            addText = f'{curDate}: {message.text}'
+            # Get action ID from DB
+            userInfo = Connection.getUserInfoByName(username=username)
+            actionId = int(userInfo['state_data'])
+            actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+            if (not dbFound(actionInfo)):
+                log(f'{fName}: Cannot find action id {actionId} for user {username}')
+                self.sendMessage(id, 'Ошибка при изменении заголовка. Попробуйте позже.')
+                return True
+            # update title
+            ret = Connection.udpdateActionText(username=username, actionId=actionId, addText=addText)
+            if (not ret):
+                log(f'{fName}: Error updating title action {actionId} for user {username}', LOG_ERROR)
+                self.sendMessage(id, 'Произошла ошибка - не могу добавить текст в задачу. Попробуйте позже')
+            else:
+                log(f'{fName}: Successfully added text: action {actionId}, addText {addText}')
+                self.sendMessage(id, f'Добавление текста в задачу прошло успешно')
+            # Clear state
+            Connection.clearUserState(username=username)
+            return True
         title = ''
         text = ''
         fromTxt = self.getFromTxt(message)
@@ -500,7 +533,6 @@ class NeoOperationBot:
         chat_id = telegramid
         Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}')
 
-
     def newActionHandler(self, message):
         fName = self.newActionHandler.__name__
         if (not NeoOperationBot.isInitialized()):
@@ -508,18 +540,6 @@ class NeoOperationBot:
             return
         self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '{TITLETEXT_SEPARATOR}'):")
         Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
-
-    def titleChangeTitle(self, callback:types.CallbackQuery):
-        fName = self.titleChangeTitle.__name__
-        username = callback.from_user.username
-        if (not NeoOperationBot.isInitialized()):
-            log(f'{fName}: Bot is not initialized', LOG_ERROR)
-            return
-        self.sendMessage(callback.from_user.id, f"Пожалуйста, введите новый заголовок задачи:")
-        Connection.setUserState(callback.from_user.username, STATE_ACTIONTITLECHANGE)
-        ret = Connection.setUserState(username=username, state=STATE_ACTIONTITLECHANGE)
-        if (not ret):
-            log(f'{fName}: Error savign state {STATE_ACTIONTITLECHANGE} for user {username}')
 
     def showRemindersHandler(self, callback:types.CallbackQuery):
         username = callback.from_user.username
@@ -666,6 +686,25 @@ class NeoOperationBot:
             chat_id = int(res[1])
             self.bot.delete_message(message_id=message_id, chat_id=chat_id)
 
+    def textAddHandler(self, callback:types.CallbackQuery):
+        fName = self.textAddHandler.__name__
+        telegramid = callback.from_user.id
+        username = callback.from_user.username
+        data = callback.data
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        title = actionInfo['title']
+        # save user state and data
+        ret = Connection.setUserState(username=username, state=STATE_ACTIONTEXTADD, data=actionInfo['id'])
+        if (not ret):
+            log(f'{fName}: Cannot save state {STATE_ACTIONTEXTADD} and data {actionInfo["id"]} for {username}')
+            self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
+        else:
+            self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
+            self.sendMessage(telegramid, f'Что вы хотите добавить к задаче "{title}":')
+
     def titleChangeActionHandler(self, callback:types.CallbackQuery):
         fName = self.titleChangeActionHandler.__name__
         telegramid = callback.from_user.id
@@ -682,6 +721,7 @@ class NeoOperationBot:
             log(f'{fName}: Cannot save state {STATE_ACTIONTITLECHANGE} and data {actionInfo["id"]} for {username}')
             self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
         else:
+            self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
             self.sendMessage(telegramid, f'Введите новый заголовок для задачи {title}:')
 
     def hideMenuHandler(self, callback:types.CallbackQuery):

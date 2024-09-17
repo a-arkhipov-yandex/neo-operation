@@ -27,14 +27,16 @@ ACTION_CANCELLED = 3
 
 STATE_ACTIONTEXT = 1
 STATE_ACTIONTITLECHANGE = 2
+STATE_ACTIONTEXTADD = 3
 
 LOGTYPE_CREATED = 1
 LOGTYPE_CANCELLED = 2
 LOGTYPE_COMPLETED = 3
-LOGTYPE_UPDATED = 4
+LOGTYPE_TITLEUPDATED = 4
 LOGTYPE_REMINDERSET = 5
 LOGTYPE_REMINDERSTOP = 6
 LOGTYPE_REMINDERSHOWN = 7
+LOGTYPE_TEXTADDED = 8
 
 #=======================
 # Common functions section
@@ -520,18 +522,18 @@ class Connection:
     # Update action title
     # Returns:
     #   False - error or no user or no action
-    #   True - action completed successfully
+    #   True - action title updated successfully
     def udpdateActionTitle(username, actionId, newTitle):
         fName = Connection.udpdateActionTitle.__name__
         if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot apdate title for action {actionId} - connection is not initialized",LOG_ERROR)
+            log(f"{fName}: Cannot update title for action {actionId} - connection is not initialized",LOG_ERROR)
             return False
         ret = False
-        actionsInfo = Connection.getActions(actionId=actionId)
-        if (actionsInfo == None):
+        actionInfo = Connection.getActionInfo(username=username,actionId=actionId)
+        if (actionInfo == None):
             log(f'{fName}: cannot update action title for action {actionId}: DB issue',LOG_ERROR)
             return ret
-        if (dbFound(actionsInfo)):
+        if (dbFound(actionInfo)):
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = 'update actions set title =%(t)s where id = %(id)s'
@@ -540,13 +542,46 @@ class Connection:
                     log(f'{fName}: Updated title for action: {actionId} - {newTitle}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed not update title for action {actionId} - {newTitle}: {error}',LOG_ERROR)
+                    log(f'{fName}: Failed update title for action {actionId} - {newTitle}: {error}',LOG_ERROR)
         else:
             log(f"{fName}: Cannot find action to update title {actionId}",LOG_ERROR)
         if (ret):
             # Log update
-            if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_UPDATED)):
-                log(f"{fName}: Cannot add log {LOGTYPE_UPDATED} for action {actionId}",LOG_ERROR)
+            if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_TITLEUPDATED)):
+                log(f"{fName}: Cannot add log {LOGTYPE_TITLEUPDATED} for action {actionId}",LOG_ERROR)
+        return ret
+
+    # Update action text (add new text to the end of action text)
+    # Returns:
+    #   False - error or no user or no action
+    #   True - action text added successfully
+    def udpdateActionText(username, actionId, addText):
+        fName = Connection.udpdateActionText.__name__
+        if (not Connection.isInitialized()):
+            log(f"{fName}: Cannot add text to action {actionId} - connection is not initialized",LOG_ERROR)
+            return False
+        ret = False
+        actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
+        if (actionInfo == None):
+            log(f'{fName}: cannot add text to action {actionId}: DB issue',LOG_ERROR)
+            return ret
+        if (dbFound(actionInfo)):
+            newText = f"{actionInfo['text']}\n{addText}"
+            conn = Connection.getConnection()
+            with conn.cursor() as cur:
+                query = 'update actions set text =%(text)s where id = %(id)s'
+                try:
+                    cur.execute(query,{'text':newText,'id':actionId})
+                    log(f'{fName}: Added action text for action: {actionId} - {addText}')
+                    ret = True
+                except (Exception, psycopg2.DatabaseError) as error:
+                    log(f'{fName}: Failed add text to action {actionId} - {addText}: {error}',LOG_ERROR)
+        else:
+            log(f"{fName}: Cannot find action to add text {actionId}",LOG_ERROR)
+        if (ret):
+            # Log update
+            if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_TEXTADDED)):
+                log(f"{fName}: Cannot add log {LOGTYPE_TEXTADDED} for action {actionId}",LOG_ERROR)
         return ret
 
     # Update action buttons
