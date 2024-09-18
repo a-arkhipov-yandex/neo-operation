@@ -463,10 +463,6 @@ class NeoOperationBot:
             self.newActionHandler(message)
         elif text == CMD_SHOWACTIONS:
             self.showActionsHandler(message)
-        elif text == CMD_COMPLETEACTION:
-            self.completeActionHandler(message)
-        elif text == CMD_CANCELACTION:
-            self.cancelActionHandler(message)
         elif text == CMD_SHOWREMINDERS:
             self.showRemindersHandler(message)
         elif re.match(r'^/ф\s+\S+', text):
@@ -582,10 +578,9 @@ class NeoOperationBot:
         self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '{TITLETEXT_SEPARATOR}'):")
         Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
 
-    def showRemindersHandler(self, callback:types.CallbackQuery):
+    def showRemindersHandler(self, callback:types.Message):
         username = callback.from_user.username
         telegramid = callback.from_user.id
-        self.bot.answer_callback_query(callback.id)
         # Check user first
         if (not self.checkUser(username=username)):
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
