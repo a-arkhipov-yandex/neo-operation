@@ -132,9 +132,16 @@ class TestDB:
         resUserState = Connection.getUserState(TestDB.testUserName1)
         resIncorrectUserState = Connection.setUserState('nonexisting_user', STATE_ACTIONTEXT)
         resIncorrectState = Connection.setUserState(TestDB.testUserName1, 25)
-        resCorrectState = Connection.setUserState(TestDB.testUserName1, STATE_ACTIONTEXT)
+        data = "123"
+        resCorrectState = Connection.setUserState(TestDB.testUserName1, STATE_ACTIONTEXT, data)
+        userInfo = Connection.getUserInfoByName(TestDB.testUserName1)
+        assert(userInfo['state_data'] == data)
+        assert(userInfo['state'] == STATE_ACTIONTEXT)
         resUserState2 = Connection.getUserState(TestDB.testUserName1)
         resClearUserState = Connection.clearUserState(TestDB.testUserName1)
+        userInfo = Connection.getUserInfoByName(TestDB.testUserName1)
+        assert(userInfo['state_data'] == None)
+        assert(userInfo['state'] == None)
         resUserState3 = Connection.getUserState(TestDB.testUserName1)
         res11 = Connection.getUserIdByName(testIncorrectUserName1)
         res2 = Connection.addUser(testIncorrectUserName2,1)
@@ -159,17 +166,38 @@ class TestDB:
         # Create action 1
         actionId1 = Connection.addAction(TestDB.testUserName1,'Test acton 1','Test test 1','')
         newTitle = "newT"
+        usename1 = TestDB.testUserName1
+        resRemWithWithout = Connection.getActions(username=usename1, withoutReminders=True, withReminders=True)
+        assert(resRemWithWithout == False)
+        resWithoutRem = Connection.getActions(username=usename1, withoutReminders=True)
+        assert(len(resWithoutRem) == 1)
+        resShown1 = Connection.getActions(username=usename1, withReminders=True, shown=True)
+        assert(len(resShown1) == 0)
+        Connection.setReminder(username=usename1, actionId=actionId1,reminder=dt.now()-timedelta(hours=10))
+        resShown1 = Connection.getActions(username=usename1, withReminders=True, shown=True)
+        assert(len(resShown1) == 0)
+        resNoShown1 = Connection.getActions(username=usename1, withReminders=True)
+        assert(len(resNoShown1) == 1)
+        Connection.markReminderAsShown(username=usename1, actionId=actionId1)
+        resShown1 = Connection.getActions(username=usename1, withReminders=True, shown=True)
+        assert(len(resShown1) == 1)
+        Connection.clearReminder(username=usename1, actionId=actionId1)
         resTitleChange = Connection.udpdateActionTitle(TestDB.testUserName1, actionId=actionId1, newTitle=newTitle)
         assert(resTitleChange)
+        resTitleChange = Connection.udpdateActionTitle(TestDB.testUserName1, actionId=actionId1+100, newTitle=newTitle)
+        assert(resTitleChange == False)
         logsUpdated = Connection.getLogs(actionId=actionId1, logType=LOGTYPE_TITLEUPDATED)
         assert(len(logsUpdated) > 0)
         newText = "newT"
         resAddText = Connection.udpdateActionText(TestDB.testUserName1, actionId=actionId1, addText=newText)
         assert(resAddText)
+        resAddText = Connection.udpdateActionText(TestDB.testUserName1, actionId=actionId1+100, addText=newText)
+        assert(resAddText == False)
         logsAdded = Connection.getLogs(actionId=actionId1, logType=LOGTYPE_TEXTADDED)
         assert(len(logsAdded) > 0)
         actionInfo1 = Connection.getActionInfo(TestDB.testUserName1, actionId=actionId1)
         assert(actionInfo1['title'] == newTitle)
+        assert(newText in actionInfo1['text'])
         logsCreated = Connection.getLogs(actionId=actionId1,logType=LOGTYPE_CREATED)
         resReminder1 = Connection.getReminder(TestDB.testUserName1, actionId1) # None
         actionWithReminders1 = Connection.getActionsWithExpiredReminders(username=TestDB.testUserName1)
@@ -218,6 +246,24 @@ class TestDB:
         resListActions4 = Connection.getActions(username=TestDB.testUserName1, active=False)
         # Cancel action 2
         resCancelActionWrongUser = Connection.completeAction(username=TestDB.testUserName1, actionId=actionId2)
+        resActivated = Connection.getActions(username=usename1, active=True)
+        assert(len(resActivated) == 0)
+        resActivate1 = Connection.activateAction(actionId=actionId1,username=usename1)
+        assert(resActivate1)
+        resActivated = Connection.getActions(username=usename1, active=True)
+        assert(len(resActivated) == 1)
+        resChangeStatus = Connection.changeActionStatus(actionId=actionId1, status=1000)
+        assert(resChangeStatus == False)
+        resChangeStatus = Connection.changeActionStatus(actionId=actionId1+100, status=ACTION_ACTIVE)
+        assert(resChangeStatus == False)
+        resChangeStatus = Connection.changeActionStatus(actionId=actionId1, status=ACTION_ACTIVE)
+        assert(resChangeStatus == False)
+        resChangeStatus = Connection.changeActionStatus(actionId=actionId1, status=ACTION_COMPLETED)
+        assert(resChangeStatus)
+        resChangeStatus = Connection.changeActionStatus(actionId=actionId1, status=ACTION_CANCELLED)
+        assert(resChangeStatus == False)
+        resChangeStatus = Connection.changeActionStatus(actionId=actionId1, status=ACTION_ACTIVE)
+        resComplete = Connection.completeAction(username=TestDB.testUserName1, actionId=actionId1)
         resCancel = Connection.cancelAction(username=TestDB.testUserName2, actionId=actionId2)
         resReminderCancelled = Connection.getReminder(TestDB.testUserName2, actionId2) # None
         resSetReminderNotActive2 = Connection.setReminder(TestDB.testUserName2, actionId2, dt.now()) # True
@@ -273,6 +319,10 @@ class TestDB:
         buttons = "19239232343"
         ret = Connection.udpdateActionButtons(username=usename,actionId=aId1,buttons=buttons)
         assert(ret)
+        ret = Connection.udpdateActionButtons(username='nonexistingusename',actionId=aId1,buttons=buttons)
+        assert(not ret)
+        ret = Connection.udpdateActionButtons(username=usename,actionId=aId1+100,buttons=buttons)
+        assert(not ret)
         actionInfo = Connection.getActionInfo(username=usename,actionId=aId1)
         assert(actionInfo['buttons'] == buttons)
         ret = Connection.clearActionButtons(username=usename,actionId=aId1)
@@ -334,6 +384,14 @@ class TestDB:
         # Remove test user
         resDelete1 = False
         resDelete2 = False
+        actionsUser1 = Connection.getActions(username=TestDB.testUserName1)
+        for action in actionsUser1:
+            id = action['id']
+            Connection.deleteAction(id)
+        actionsUser2 = Connection.getActions(username=TestDB.testUserName2)
+        for action in actionsUser2:
+            id = action['id']
+            Connection.deleteAction(id)
         resDelete1 = Connection.deleteUser(TestDB.testUserId1)
         resDelete2 = Connection.deleteUser(TestDB.testUserId2)
         # Close connection

@@ -381,10 +381,13 @@ class Connection:
     # Returns:
     #   None - error or no user
     #   [{action1}, ...] - array of user actions
-    def getActions(username=None, active=False, actionId=None, withReminders=False, shown=None):
+    def getActions(username=None, active=False, actionId=None, withReminders=False, withoutReminders=False, shown=None):
         fName = Connection.getActions.__name__
         params = {}
         addQuery = ''
+        if (withReminders and withoutReminders):
+            log(f'{fName}: Dont support both withReminders and withoutReminders', LOG_ERROR)
+            return False
         whereQuery = f' where l.logtype = {LOGTYPE_CREATED} '
         if (username):
             addQuery = ' and u.name = %(un)s '
@@ -402,6 +405,9 @@ class Connection:
             if (shown != None):
                 addQuery = addQuery + ' and a.shown = %(aSh)s'
                 params['aSh'] = shown
+        elif (withoutReminders):
+            reminderQuery = ' and a.reminder is %(rem)s '
+            params['rem'] = None
         query = f'''
             select a.id, a.userid, u.name, a.title, a.text, a.from, a.created,
                 a.reminder, a.status, a.completedate, u.telegramid, a.shown, a.buttons
@@ -554,7 +560,7 @@ class Connection:
             log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
             return False
         # Check new status first
-        if (status != ACTION_COMPLETED and status != ACTION_CANCELLED) and status != ACTION_ACTIVE:
+        if (status != ACTION_COMPLETED and status != ACTION_CANCELLED and status != ACTION_ACTIVE):
             log(f"{fName}: Wrong status provided {actionId} - {status}",LOG_ERROR)
             return False
         ret = False
@@ -661,11 +667,11 @@ class Connection:
             log(f"{fName}: Cannot save buttons for action {actionId} - connection is not initialized",LOG_ERROR)
             return False
         ret = False
-        actionsInfo = Connection.getActions(actionId=actionId)
-        if (actionsInfo == None):
+        actionInfo = Connection.getActionInfo(actionId=actionId, username=username)
+        if (actionInfo == None):
             log(f'{fName}: cannot update action {actionId}: DB issue',LOG_ERROR)
             return ret
-        if (dbFound(actionsInfo)):
+        if (dbFound(actionInfo)):
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = 'update actions set buttons =%(t)s where id = %(id)s'

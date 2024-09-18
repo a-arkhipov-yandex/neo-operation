@@ -18,7 +18,7 @@ ENV_TESTBOT = 'TESTBOT'
 
 ENV_DEFAULTREMINDERTIME = "DEFAULTREMINDERTIME"
 
-VERSION = '0.4'
+VERSION = '1.0'
 
 TITLETEXT_SEPARATOR = '@@@'
 
@@ -382,7 +382,7 @@ class NeoOperationBot:
         return None
 
     # Get forward nessage
-    def getFromTxt(self, message):
+    def getFromTxt(self, message:types.Message):
         fromTxt = None
         # Check fromard message
         if (message.forward_origin):
@@ -560,6 +560,8 @@ class NeoOperationBot:
         {CMD_NEWACTION} - создать новую задачу
         {CMD_SHOWACTIONS} - вывести все активные задачи
         {CMD_SHOWREMINDERS} - вывести все задачи с истекшими напоминаниями
+        {CMD_SEARCHACTIVE} - искать в заголовке или тексте активных задач
+        {CMD_SEARCHALL} - искать в заголовке или тексте всех задач
         '''
     # Get welcome message
     def getWelcomeMessage(self, userName):
