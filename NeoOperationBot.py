@@ -29,6 +29,7 @@ CMD_SHOWACTIONS = '/showactions'
 CMD_COMPLETEACTION = '/completeaction'
 CMD_CANCELACTION = '/cancelaction'
 CMD_SHOWREMINDERS = '/showreminders'
+CMD_EXIT = '/q' # Exist from any states
 
 CALLBACK_ACTION_TAG = 'actionId:'
 CALLBACK_ACTIONCOMPLETE_TAG = 'completeActionId:'
@@ -443,6 +444,8 @@ class NeoOperationBot:
         text = message.text.lower()
         if text == CMD_HELP:
             self.helpHandler(message)
+        elif text == CMD_EXIT:
+            self.quitHandler(message)
         elif text == CMD_START:
             self.startHandler(message)
         elif text == CMD_NEWACTION:
@@ -466,6 +469,12 @@ class NeoOperationBot:
         text = message.text[3:] # Remove '/ф '
         username = message.from_user.username
         self.setForwardCache(username, text)
+
+    # /help cmd handler
+    def quitHandler(self, message:types.Message):
+        # Clear state for user
+        username = message.from_user.username
+        Connection.clearUserState(username=username)
 
     # /help cmd handler
     def helpHandler(self, message):
