@@ -18,7 +18,7 @@ ENV_TESTBOT = 'TESTBOT'
 
 ENV_DEFAULTREMINDERTIME = "DEFAULTREMINDERTIME"
 
-VERSION = '0.3'
+VERSION = '0.4'
 
 TITLETEXT_SEPARATOR = '@@@'
 
@@ -29,9 +29,12 @@ CMD_SHOWACTIONS = '/showactions'
 CMD_COMPLETEACTION = '/completeaction'
 CMD_CANCELACTION = '/cancelaction'
 CMD_SHOWREMINDERS = '/showreminders'
+CMD_SEARCHACTIVE = '/searchactive'
+CMD_SEARCHALL = '/searchall'
 CMD_EXIT = '/q' # Exist from any states
 
 CALLBACK_ACTION_TAG = 'actionId:'
+CALLBACK_ACTIONACTIVATE_TAG = 'activateActionId:'
 CALLBACK_ACTIONCOMPLETE_TAG = 'completeActionId:'
 CALLBACK_ACTIONCANCEL_TAG = 'cancelActionId:'
 CALLBACK_ACTIONREMINDERSET_TAG = 'reminderSetActionId:'
@@ -39,6 +42,8 @@ CALLBACK_ACTIONREMINDERSTOP_TAG = 'reminderStopActionId:'
 CALLBACK_ACTIONTITLECHANGE_TAG = 'titleChangeTitle:'
 CALLBACK_ACTIONHIDEMENU_TAG = 'hideMenu:'
 CALLBACK_ACTIONTEXTADD_TAG = 'textAdd:'
+CALLBACK_SEARCHACTIVEACTIONS_TAG = 'searchActiveActions:'
+CALLBACK_SEARCHALLACTIONS_TAG = 'searchAllActions:'
 
 #============================
 # Common functions
@@ -102,57 +107,83 @@ def getNextReminder(hoursToDelay=None, daysToDelay=None):
                             hour=hours,minute=minutes,second=0)
     return reminder
 
-# Action menu
+# Action menu based on action status
 # If reminder=True - hide buttons after press
-def getActionMenu(actionId, reminder=False):
-    # Complete
-    key1 = types.InlineKeyboardButton(
-        text=f'\U00002705 Сделано!',
-        callback_data=f'{CALLBACK_ACTIONCOMPLETE_TAG}{actionId}'
-    )
-    # Cancel
-    key2 = types.InlineKeyboardButton(
-        text=f'\U0000274C Отменить',
-        callback_data=f'{CALLBACK_ACTIONCANCEL_TAG}{actionId}'
-    )
-    # Set reminder
-    key31 = types.InlineKeyboardButton(
-        text=f'\U0001F550 На 1 час',
-        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:1'
-    )
-    key32 = types.InlineKeyboardButton(
-        text=f'\U0001F552 На 3 часа',
-        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:3'
-    )
-    key33 = types.InlineKeyboardButton(
-        text=f'\U000023F0 На завтра',
-        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:1d'
-    )
-    # Stop Reminder
-    key4 = types.InlineKeyboardButton(
-        text=f'\U0001F515 Не напоминать больше',
-        callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
-    )
-    # Change title
-    key5 = types.InlineKeyboardButton(
-        text=f'\U0001F58B Изменить заголовок',
-        callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
-    )
-    key6 = types.InlineKeyboardButton(
-        text=f'\U0001F4DD Добавить текст',
-        callback_data=f'{CALLBACK_ACTIONTEXTADD_TAG}{actionId}'
-    )
-    # Hide menu
-    key7 = types.InlineKeyboardButton(
-        text=f'\U00002716 Скрыть меню (ничего не делать)',
-        callback_data=f'{CALLBACK_ACTIONHIDEMENU_TAG}{actionId}'
-    )
+def getActionMenu(actionId, reminder=False, active=True):
     keyboard = types.InlineKeyboardMarkup() # keyboard
-    keyboard.row(key1, key2)
-    keyboard.row(key31, key32, key33)
-    keyboard.row(key4)
-    keyboard.row(key5, key6)
-    keyboard.row(key7)
+    if (active):
+        # Complete
+        key1 = types.InlineKeyboardButton(
+            text=f'\U00002705 Сделано!',
+            callback_data=f'{CALLBACK_ACTIONCOMPLETE_TAG}{actionId}'
+        )
+        # Cancel
+        key2 = types.InlineKeyboardButton(
+            text=f'\U0000274C Отменить',
+            callback_data=f'{CALLBACK_ACTIONCANCEL_TAG}{actionId}'
+        )
+        # Set reminder
+        key31 = types.InlineKeyboardButton(
+            text=f'\U0001F550 На 1 час',
+            callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:1'
+        )
+        key32 = types.InlineKeyboardButton(
+            text=f'\U0001F552 На 3 часа',
+            callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:3'
+        )
+        key33 = types.InlineKeyboardButton(
+            text=f'\U000023F0 На завтра',
+            callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:1d'
+        )
+        # Stop Reminder
+        key4 = types.InlineKeyboardButton(
+            text=f'\U0001F515 Не напоминать больше',
+            callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
+        )
+        # Change title
+        key5 = types.InlineKeyboardButton(
+            text=f'\U0001F58B Изменить заголовок',
+            callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
+        )
+        # Add text to action
+        key6 = types.InlineKeyboardButton(
+            text=f'\U0001F4DD Добавить текст',
+            callback_data=f'{CALLBACK_ACTIONTEXTADD_TAG}{actionId}'
+        )
+        # Hide menu
+        key7 = types.InlineKeyboardButton(
+            text=f'\U00002716 Скрыть меню (ничего не делать)',
+            callback_data=f'{CALLBACK_ACTIONHIDEMENU_TAG}{actionId}'
+        )
+        keyboard.row(key1, key2)
+        keyboard.row(key31, key32, key33)
+        keyboard.row(key4)
+        keyboard.row(key5, key6)
+        keyboard.row(key7)
+    else:
+        # Reactivate
+        key1 = types.InlineKeyboardButton(
+            text=f'\U0001F4A5 Сделать активной',
+            callback_data=f'{CALLBACK_ACTIONACTIVATE_TAG}{actionId}'
+        )
+        # Change title
+        key2 = types.InlineKeyboardButton(
+            text=f'\U0001F58B Изменить заголовок',
+            callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
+        )
+        # Add text to action
+        key3 = types.InlineKeyboardButton(
+            text=f'\U0001F4DD Добавить текст',
+            callback_data=f'{CALLBACK_ACTIONTEXTADD_TAG}{actionId}'
+        )
+        # Hide menu
+        key4 = types.InlineKeyboardButton(
+            text=f'\U00002716 Скрыть меню (ничего не делать)',
+            callback_data=f'{CALLBACK_ACTIONHIDEMENU_TAG}{actionId}'
+        )
+        keyboard.row(key1)
+        keyboard.row(key2, key3)
+        keyboard.row(key4)
     return keyboard
 
     # Get reminder description
@@ -166,10 +197,21 @@ def getReminderText(actionInfo):
         '''
     return text
 
+def getActionStatusText(actionInfo):
+    statusTxt = 'Активная \U0001F4A5'
+    status = actionInfo['status']
+    if (status == ACTION_COMPLETED):
+        statusTxt = 'Выполнена \U00002705'
+    if (status == ACTION_CANCELLED):
+        statusTxt = 'Отменена \U0000274C'
+    return statusTxt
+
 def getActionInfoText(actionInfo):
-    reminder = getReminderText(actionInfo)
+    reminder = getReminderText(actionInfo=actionInfo)
+    status = getActionStatusText(actionInfo=actionInfo)
     text = f'''
 \U0001F3AF Задача: {actionInfo["title"]}
+\U00002734 Статус: {status}
 \U0001F4DC Описание:
 {actionInfo["text"]}
 \U0000231B Напоминание: {reminder}
@@ -192,6 +234,10 @@ class NeoOperationBot:
         NeoOperationBot.__bot.register_callback_query_handler(
             self.completeActionHandler,
             func=lambda message: re.match(fr'^{CALLBACK_ACTIONCOMPLETE_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.activateActionHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONACTIVATE_TAG}\d+$', message.data)
         )
         NeoOperationBot.__bot.register_callback_query_handler(
             self.cancelActionHandler,
@@ -217,7 +263,14 @@ class NeoOperationBot:
             self.textAddHandler,
             func=lambda message: re.match(fr'^{CALLBACK_ACTIONTEXTADD_TAG}\d+$', message.data)
         )
-
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.cmdSearchActionsHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_SEARCHACTIVEACTIONS_TAG}\d+$', message.data)
+        )
+        NeoOperationBot.__bot.register_callback_query_handler(
+            self.cmdSearchActionsHandler,
+            func=lambda message: re.match(fr'^{CALLBACK_SEARCHALLACTIONS_TAG}\d+$', message.data)
+        )
 
     def initBot(self):
         # Check if bot is already initialized
@@ -348,7 +401,7 @@ class NeoOperationBot:
             text = f'@{fromTxtUser}: {tmp[1]}'
         return (title, text)
 
-    def replyHandler(self, message):
+    def replyHandler(self, message:types.Message):
         fName = self.replyHandler.__name__
         # Check current user state
         username = message.from_user.username
@@ -403,6 +456,9 @@ class NeoOperationBot:
             # Clear state
             Connection.clearUserState(username=username)
             return True
+        elif (state in [STATE_SEARCHACTIVEACTIONS, STATE_SEARCHALLACTIONS]):
+            self.searchActionsHandler(message, state)
+            return True
         title = ''
         text = ''
         fromTxt = self.getFromTxt(message)
@@ -430,7 +486,7 @@ class NeoOperationBot:
         self.setReminder(actionInfo=actionInfo)
         return True
 
-    def startHandler(self, message):
+    def cmdStartHandler(self, message):
         username = message.from_user.username
         telegramId = message.from_user.id
         # Check if user exists
@@ -442,10 +498,10 @@ class NeoOperationBot:
                 self.sendMessage(telegramId, 'Ошибка при регистоации пользователя. Попробуйте позже.')
             # Send welcome message
             self.sendMessage(telegramId, 'Регистрация пользователя прошла успешно.')
-            self.helpHandler(message)
+            self.cmdHelpHandler(message)
         else:
             # Show help message
-            self.helpHandler(message)
+            self.cmdHelpHandler(message)
 
     def cmdHandler(self, message):
         telegramid = message.from_user.id
@@ -454,37 +510,41 @@ class NeoOperationBot:
         Connection.clearUserState(username=username)
         text = message.text.lower()
         if text == CMD_HELP:
-            self.helpHandler(message)
+            self.cmdHelpHandler(message)
         elif text == CMD_EXIT:
-            self.quitHandler(message)
+            self.cmdQuitHandler(message)
         elif text == CMD_START:
-            self.startHandler(message)
+            self.cmdStartHandler(message)
         elif text == CMD_NEWACTION:
-            self.newActionHandler(message)
+            self.cmdNewActionHandler(message)
         elif text == CMD_SHOWACTIONS:
-            self.showActionsHandler(message)
+            self.cmdShowActionsHandler(message)
         elif text == CMD_SHOWREMINDERS:
-            self.showRemindersHandler(message)
+            self.cmdShowRemindersHandler(message)
+        elif text == CMD_SEARCHACTIVE:
+            self.cmdSearchActionsHandler(message, STATE_SEARCHACTIVEACTIONS)
+        elif text == CMD_SEARCHALL:
+            self.cmdSearchActionsHandler(message, STATE_SEARCHALLACTIONS)
         elif re.match(r'^/ф\s+\S+', text):
-            self.preForwardHandle(message)
+            self.cmdPreForwardHandle(message)
         else:
             self.sendMessage(telegramid, "Неизвестная команда.")
             self.sendMessage(telegramid, self.getHelpMessage(message.from_user.username))
 
     # Handler for text along with fowrarded message
-    def preForwardHandle(self, message):
+    def cmdPreForwardHandle(self, message):
         text = message.text[3:] # Remove '/ф '
         username = message.from_user.username
         self.setForwardCache(username, text)
 
     # /help cmd handler
-    def quitHandler(self, message:types.Message):
+    def cmdQuitHandler(self, message:types.Message):
         # Clear state for user
         username = message.from_user.username
         Connection.clearUserState(username=username)
 
     # /help cmd handler
-    def helpHandler(self, message):
+    def cmdHelpHandler(self, message):
         self.sendMessage(message.from_user.id, self.getHelpMessage(message.from_user.username))
 
     # Returns help message
@@ -560,7 +620,7 @@ class NeoOperationBot:
         actionInfoText = getActionInfoText(actionInfo=actionInfo)
         actionInfoMessageId = self.sendMessage(callback.from_user.id, actionInfoText)
         # Save message ID
-        keyboard = getActionMenu(actionId=actionId)
+        keyboard = getActionMenu(actionId=actionId, active=(actionInfo['status'] == ACTION_ACTIVE))
         message_sent = self.bot.send_message(telegramid,
                                              text='Выберите действие с задачей:',
                                              reply_markup=keyboard,
@@ -570,15 +630,15 @@ class NeoOperationBot:
         chat_id = telegramid
         Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}|{actionInfoMessageId}')
 
-    def newActionHandler(self, message):
-        fName = self.newActionHandler.__name__
+    def cmdNewActionHandler(self, message):
+        fName = self.cmdNewActionHandler.__name__
         if (not NeoOperationBot.isInitialized()):
             log(f'{fName}: Bot is not initialized', LOG_ERROR)
             return
         self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '{TITLETEXT_SEPARATOR}'):")
         Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
 
-    def showRemindersHandler(self, callback:types.Message):
+    def cmdShowRemindersHandler(self, callback:types.Message):
         username = callback.from_user.username
         telegramid = callback.from_user.id
         # Check user first
@@ -601,7 +661,7 @@ class NeoOperationBot:
                 keyboard.add(key)
             self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
 
-    def showActionsHandler(self, message:types.Message):
+    def cmdShowActionsHandler(self, message:types.Message):
         username = message.from_user.username
         telegramid = message.from_user.id
         # Check user first
@@ -610,19 +670,73 @@ class NeoOperationBot:
             return False
         # Get all active actions
         actions = Connection.getActions(username=username, active=True)
-        keyboard = types.InlineKeyboardMarkup(); # keyboard
-        question = 'Выберите задачу для обработки:'
         if (len(actions) == 0):
             # No active actions
             self.sendMessage(telegramid, f'У вас нет активных задач. Создайте при помощи {CMD_NEWACTION}')
         else:
-            for action in actions:
-                key = types.InlineKeyboardButton(
-                    text=f'\U0001F4DA {action["title"]}',
-                    callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
-                )
-                keyboard.add(key)
+            question = 'Выберите задачу для обработки:'
+            keyboard = self.getActionsKeyboard(actions)
             self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
+
+    def searchActionsHandler(self, message:types.Message, state):
+        fName = self.searchActionsHandler.__name__
+        username = message.from_user.username
+        telegramid = message.from_user.id
+        text_to_search = message.text
+        log(f'{fName} invoked with params state={state}, text={text_to_search}',LOG_DEBUG)
+        # Check user first
+        if (not self.checkUser(username=username)):
+            self.sendMessage(id, f'{fName}: Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"', LOG_ERROR)
+            return False
+        # Check state
+        if (not dbLibCheckUserState(state=state)):
+            log(f'{fName}: Incorrect state provided: {state}', LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Произошла ошибка. Попробуйте позже.')
+            return
+        status = ACTION_ACTIVE
+        if (state == STATE_SEARCHALLACTIONS):
+            status = None
+        # Get all active actions
+        actions = Connection.searchActions(textToSearch=text_to_search, username=username, status=status)
+        if (len(actions) == 0):
+            # No active actions
+            self.sendMessage(telegramid, f'Не найдено ни одной задачи. Попробуйте изменить условие поиска.')
+        else:
+            question = 'Список задач:'
+            keyboard = self.getActionsKeyboard(actions=actions)
+            self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
+
+    def getActionsKeyboard(self, actions):
+        keyboard = types.InlineKeyboardMarkup(); # keyboard
+        for action in actions:
+            key = types.InlineKeyboardButton(
+                text=f'\U0001F4DA {action["title"]}',
+                callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
+            )
+            keyboard.add(key)
+        return keyboard
+
+    def activateActionHandler(self, callback:types.CallbackQuery):
+        fName = self.activateActionHandler.__name__
+        username = callback.from_user.username
+        telegramid = callback.from_user.id
+        data = callback.data
+        self.bot.answer_callback_query(callback.id)
+        actionInfo = self.extractActionInfo(username=username, data=data)
+        if (not actionInfo):
+            log(f'{fName}: Cannot extract action from callback data {data}',LOG_ERROR)
+            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            return
+        actionId = actionInfo['id']
+        # Complete action
+        ret = Connection.activateAction(actionId=actionId, username=username)
+        if (ret):
+            # Remove keyboard if set
+            self.removeActionKeyboard(actionInfo['buttons'])
+            Connection.clearActionButtons(username=username,actionId=actionId)
+            self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" реактивирована.')
+        else:
+            self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
 
     def completeActionHandler(self, callback:types.CallbackQuery):
         username = callback.from_user.username
@@ -750,6 +864,22 @@ class NeoOperationBot:
         else:
             self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
             self.sendMessage(telegramid, f'Что вы хотите добавить к задаче "{title}":')
+
+    def cmdSearchActionsHandler(self, message:types.Message, state):
+        fName = self.cmdSearchActionsHandler.__name__
+        telegramid = message.from_user.id
+        username = message.from_user.username
+        # Check state first
+        if (not dbLibCheckUserState(state=state)):
+            log(f'{fName}: Incorrect state provided: {state}', LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Произошла ошибка. Попробуйте позже.')
+            return
+        ret = Connection.setUserState(username=username, state=state)
+        if (not ret):
+            log(f'{fName}: Cannot save state {state} for {username}')
+            self.sendMessage(telegramid=telegramid, text="Ошибка активации поиска. Попробуйте позже.")
+        else:
+            self.sendMessage(telegramid, f'Введите текст для поиска в заголовке и/или в описании задачи:')
 
     def titleChangeActionHandler(self, callback:types.CallbackQuery):
         fName = self.titleChangeActionHandler.__name__

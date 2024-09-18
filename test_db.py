@@ -179,8 +179,20 @@ class TestDB:
         resReminder2 = Connection.getReminder(TestDB.testUserName1, actionId1) # not None
         resLogCreated = (len(logsCreated) > 0)
         # Create action 2
-        actionId2 = Connection.addAction(TestDB.testUserName2,'Test acton 2','Test test 2','')
-        actionId3 = Connection.addAction(TestDB.testUserName2,'Test acton 3','Test test 3','')
+        actionId2 = Connection.addAction(TestDB.testUserName2,'Test action 2','Test test 2','')
+        actionId3 = Connection.addAction(TestDB.testUserName2,'Test action 3','Test test 3','')
+        searchActiveNonexistingAction = Connection.searchActions('test2323', username=TestDB.testUserName2)
+        assert(len(searchActiveNonexistingAction) == 0)
+        searchAllNonexistingAction = Connection.searchActions('test2323', username=TestDB.testUserName2)
+        assert(len(searchAllNonexistingAction) == 0)
+        searchActiveExistingActionTitle = Connection.searchActions('action 2', username=TestDB.testUserName2)
+        assert(len(searchActiveExistingActionTitle) == 1)
+        searchAllExistingActionTitle = Connection.searchActions('action', username=TestDB.testUserName2)
+        assert(len(searchAllExistingActionTitle) == 2)
+        searchActiveExistingActionText = Connection.searchActions('test 2', username=TestDB.testUserName2)
+        assert(len(searchActiveExistingActionText) == 1)
+        searchAllExistingActionText = Connection.searchActions('Test test', username=TestDB.testUserName2)
+        assert(len(searchAllExistingActionText) == 2)
         oneHour = timedelta(hours=1)
         Connection.setReminder(TestDB.testUserName2, actionId3, dt.now()-oneHour) # True
         Connection.setReminder(TestDB.testUserName2, actionId2, "20.12.2034") # True

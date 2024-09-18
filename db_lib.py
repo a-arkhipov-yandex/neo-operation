@@ -28,6 +28,8 @@ ACTION_CANCELLED = 3
 STATE_ACTIONTEXT = 1
 STATE_ACTIONTITLECHANGE = 2
 STATE_ACTIONTEXTADD = 3
+STATE_SEARCHACTIVEACTIONS = 4
+STATE_SEARCHALLACTIONS = 5
 
 LOGTYPE_CREATED = 1
 LOGTYPE_CANCELLED = 2
@@ -37,6 +39,7 @@ LOGTYPE_REMINDERSET = 5
 LOGTYPE_REMINDERSTOP = 6
 LOGTYPE_REMINDERSHOWN = 7
 LOGTYPE_TEXTADDED = 8
+LOGTYPE_ACTIVATED = 9
 
 #=======================
 # Common functions section
@@ -425,6 +428,45 @@ class Connection:
                 actions = NOT_FOUND
         return actions
 
+    # Search text in action title and/or text for all (state=None)
+    #  or active (by default) actions for user username
+    # Returns:
+    #   None - error or no user
+    #   [{action1}, ...] - array of user actions (possibly empty)
+    def searchActions(textToSearch, username=None, status=ACTION_ACTIVE):
+        fName = Connection.searchActions.__name__
+        params = {'text1':f'%{textToSearch}%', 'text2':f'%{textToSearch}%'}
+        addQuery = ''
+        if (username):
+            addQuery = ' and u.name = %(un)s '
+            params['un'] = username
+        if (status):
+            addQuery = addQuery + ' and a.status = %(st)s '
+            params['st'] = status
+        query = f'''
+            select a.id, a.userid, u.name, a.title, a.text, a.from, a.created,
+                a.reminder, a.status, a.completedate, u.telegramid, a.shown, a.buttons
+            from actions as a
+            join users as u on u.id = a.userid
+            join logs as l on l.actionid = a.id
+            where l.logtype = {LOGTYPE_CREATED}
+                and (a.title like %(text1)s or a.text like %(text2)s)
+            {addQuery}
+            order by l.time_stamp
+        '''
+        # Execute query
+        actions = []
+        actionsRet = Connection.executeQuery(query=query, params=params, all=True)
+        if (dbFound(actionsRet)):
+            for rawAction in actionsRet:
+                action = Connection.parseActionData(rawAction)
+                if (action):
+                    actions.append(action)
+        elif (actionsRet == None):
+            log(f'{fName}: cannot search actions: {query} | {params}: DB issue', LOG_ERROR)
+            actions = None
+        return actions
+
     # Get actions with reminders which were not shown before
     def getActionsWithExpiredReminders(username=None):
         return Connection.getActions(username=username, active=True, withReminders=True, shown=False)
@@ -448,12 +490,35 @@ class Connection:
             if (actionInfo['username'] != username):
                 log(f'{fName}: Action {actionId} doesnt belog to user {username}', LOG_ERROR)
                 return ret
-            ret = Connection.completeOrCancelAction(actionId, ACTION_COMPLETED)
+            ret = Connection.changeActionStatus(actionId, ACTION_COMPLETED)
             if (ret):
                 log(f'Action {actionId} completed')
                 Connection.addLog(actionId=actionId, logType=LOGTYPE_COMPLETED)
         else:
             log(f'{fName}: Cannot find action to complete {username} - {actionId}', LOG_ERROR)
+        return ret
+
+    # Activate action for user username
+    # Returns:
+    #   False - error or no user or no action
+    #   True - action completed successfully
+    def activateAction(actionId, username):
+        fName = Connection.completeAction.__name__
+        # Check that action belongs to user
+        actionsInfo = Connection.getActions(actionId=actionId)
+        ret = False
+        if (dbFound(actionsInfo) and (len(actionsInfo) == 1)):
+            actionInfo = actionsInfo[0] # Get the only record
+            # Check user
+            if (actionInfo['username'] != username):
+                log(f'{fName}: Action {actionId} doesnt belog to user {username}', LOG_ERROR)
+                return ret
+            ret = Connection.changeActionStatus(actionId, ACTION_ACTIVE)
+            if (ret):
+                log(f'Action {actionId} activated')
+                Connection.addLog(actionId=actionId, logType=LOGTYPE_ACTIVATED)
+        else:
+            log(f'{fName}: Cannot find action to activate {username} - {actionId}', LOG_ERROR)
         return ret
 
     # Cancel action for user username
@@ -471,7 +536,7 @@ class Connection:
             if (actionInfo['username'] != username):
                 log(f'{fName}: Action {actionId} doesnt belog to user {username}', LOG_ERROR)
                 return ret
-            ret = Connection.completeOrCancelAction(actionId, ACTION_CANCELLED)
+            ret = Connection.changeActionStatus(actionId, ACTION_CANCELLED)
             if (ret):
                 log(f'Action {actionId} cancelled')
                 Connection.addLog(actionId=actionId, logType=LOGTYPE_CANCELLED)
@@ -483,13 +548,13 @@ class Connection:
     # Returns:
     #   False - error or no user or no action
     #   True - action completed successfully
-    def completeOrCancelAction(actionId, status):
-        fName = Connection.completeOrCancelAction.__name__
+    def changeActionStatus(actionId, status):
+        fName = Connection.changeActionStatus.__name__
         if (not Connection.isInitialized()):
             log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
             return False
         # Check new status first
-        if (status != ACTION_COMPLETED and status != ACTION_CANCELLED):
+        if (status != ACTION_COMPLETED and status != ACTION_CANCELLED) and status != ACTION_ACTIVE:
             log(f"{fName}: Wrong status provided {actionId} - {status}",LOG_ERROR)
             return False
         ret = False
@@ -500,10 +565,12 @@ class Connection:
         if (dbFound(actionsInfo)):
             actionInfo = actionsInfo[0] # get first and the only element
             # Check that action is not completed yet
-            if (actionInfo['status'] != ACTION_ACTIVE):
+            if (actionInfo['status'] != ACTION_ACTIVE and status != ACTION_ACTIVE):
                 log(f'{fName}: Action {actionId} is already completed - cannot complete', LOG_ERROR)
                 return False
-
+            elif (actionInfo['status'] == ACTION_ACTIVE and status == ACTION_ACTIVE):
+                log(f'{fName}: Action {actionId} is already active - cannot activate', LOG_ERROR)
+                return False
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = '''update actions set completedate = NOW(), status=%(st)s, shown=%(sh)s,
