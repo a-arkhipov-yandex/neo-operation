@@ -83,51 +83,63 @@ def getCurrentDateTime():
 
 # Get next reminder datetime
 # Returns: datetime object with new reminder
-def getNextReminder(daysToDelay=1):
+def getNextReminder(hoursToDelay=None, daysToDelay=None):
     # Get current date
     today = dt.now()
-    # Add one day
-    oneDay = timedelta(days=daysToDelay)
-    tomorrow = today + oneDay
-    # Set time to default time
-    (hours, minutes) = NeoOperationBot.defaultReminderTime.split(':')
-    hours = int(hours)
-    minutes = int(minutes)
-    newTomorrow = dt(year=tomorrow.year,month=tomorrow.month,day=tomorrow.day,
-                        hour=hours,minute=minutes,second=0)
-    return newTomorrow
+    delay = timedelta()
+    reminder = ''
+    if (hoursToDelay):
+        delay = timedelta(hours=hoursToDelay)
+        reminder = today + delay
+    elif (daysToDelay):
+        delay = timedelta(days=daysToDelay)
+        tomorrow = today + delay
+        # Set time to default time
+        (hours, minutes) = NeoOperationBot.defaultReminderTime.split(':')
+        hours = int(hours)
+        minutes = int(minutes)
+        reminder = dt(year=tomorrow.year,month=tomorrow.month,day=tomorrow.day,
+                            hour=hours,minute=minutes,second=0)
+    return reminder
 
 # Action menu
 # If reminder=True - hide buttons after press
 def getActionMenu(actionId, reminder=False):
     # Complete
     key1 = types.InlineKeyboardButton(
-        text=f'\U00002705 Отметить задачу сделанной',
+        text=f'\U00002705 Сделано!',
         callback_data=f'{CALLBACK_ACTIONCOMPLETE_TAG}{actionId}'
     )
     # Cancel
     key2 = types.InlineKeyboardButton(
-        text=f'\U0000274C Отменить задачу',
+        text=f'\U0000274C Отменить',
         callback_data=f'{CALLBACK_ACTIONCANCEL_TAG}{actionId}'
     )
     # Set reminder
-    key3 = types.InlineKeyboardButton(
-        text=f'\U0001F514 Установить напоминание на следующее утро',
-        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}'
+    key31 = types.InlineKeyboardButton(
+        text=f'\U0001F550 На 1 час',
+        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:1'
+    )
+    key32 = types.InlineKeyboardButton(
+        text=f'\U0001F552 На 3 часа',
+        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:3'
+    )
+    key33 = types.InlineKeyboardButton(
+        text=f'\U000023F0 На завтра',
+        callback_data=f'{CALLBACK_ACTIONREMINDERSET_TAG}{actionId}:1d'
     )
     # Stop Reminder
     key4 = types.InlineKeyboardButton(
         text=f'\U0001F515 Не напоминать больше',
         callback_data=f'{CALLBACK_ACTIONREMINDERSTOP_TAG}{actionId}'
     )
-    if (not reminder):
-        # Change title
-        key5 = types.InlineKeyboardButton(
-            text=f'\U0001F58B Изменить заголовок задачи',
-            callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
-        )
+    # Change title
+    key5 = types.InlineKeyboardButton(
+        text=f'\U0001F58B Изменить заголовок',
+        callback_data=f'{CALLBACK_ACTIONTITLECHANGE_TAG}{actionId}'
+    )
     key6 = types.InlineKeyboardButton(
-        text=f'\U0001F4DD Добавить информацию в задачу',
+        text=f'\U0001F4DD Добавить текст',
         callback_data=f'{CALLBACK_ACTIONTEXTADD_TAG}{actionId}'
     )
     # Hide menu
@@ -135,16 +147,12 @@ def getActionMenu(actionId, reminder=False):
         text=f'\U00002716 Скрыть меню (ничего не делать)',
         callback_data=f'{CALLBACK_ACTIONHIDEMENU_TAG}{actionId}'
     )
-
-    keyboard = types.InlineKeyboardMarkup(); # keyboard
-    keyboard.add(key1)
-    keyboard.add(key2)
-    keyboard.add(key3)
-    keyboard.add(key4)
-    if (not reminder):
-        keyboard.add(key5)
-    keyboard.add(key6)
-    keyboard.add(key7)
+    keyboard = types.InlineKeyboardMarkup() # keyboard
+    keyboard.row(key1, key2)
+    keyboard.row(key31, key32, key33)
+    keyboard.row(key4)
+    keyboard.row(key5, key6)
+    keyboard.row(key7)
     return keyboard
 
     # Get reminder description
@@ -191,7 +199,7 @@ class NeoOperationBot:
         )
         NeoOperationBot.__bot.register_callback_query_handler(
             self.reminderSetActionHandler,
-            func=lambda message: re.match(fr'^{CALLBACK_ACTIONREMINDERSET_TAG}\d+$', message.data)
+            func=lambda message: re.match(fr'^{CALLBACK_ACTIONREMINDERSET_TAG}\d+:\S+$', message.data)
         )
         NeoOperationBot.__bot.register_callback_query_handler(
             self.reminderStopActionHandler,
@@ -313,9 +321,12 @@ class NeoOperationBot:
         return False
 
     # Send message to user
+    # Returns: Message ID
     def sendMessage(self, telegramid, text):
         if (NeoOperationBot.isInitialized()):
-            NeoOperationBot.__bot.send_message(telegramid, text)
+            ret = NeoOperationBot.__bot.send_message(telegramid, text)
+            return ret.message_id
+        return None
 
     # Get forward nessage
     def getFromTxt(self, message):
@@ -502,14 +513,33 @@ class NeoOperationBot:
         '''
         return ret
 
+    # Extract reminder info from callback data
+    # Returns:
+    #   None - error during extraction
+    #   reminderTimeDate
+    def extractReminder(self, data):
+        fName = self.extractReminder.__name__
+        dataPayload = data.split(':')
+        if (len(dataPayload) != 3):
+            log(f'{fName}: Error during reminder extraction: {data}')
+            return None
+        reminderTag = dataPayload[2]
+        reminder = getNextReminder(daysToDelay=1)
+        if (reminderTag == '1'):
+                reminder = getNextReminder(hoursToDelay=1)
+        elif (reminderTag == '3'):
+            reminder = getNextReminder(hoursToDelay=3)
+        return reminder
+
     # Extract action info from callback data
     # Returns:
     #   None - error during extraction
     #   actionId - action id
     def extractActionInfo(self, username, data):
         fName = self.extractActionInfo.__name__
+        dataPayload = data.split(':')
         try:
-            actionId = int(data.split(':')[1])
+            actionId = int(dataPayload[1])
         except:
             log(f'{fName}: Incorrect actionId provided: {data}')
             return None
@@ -524,14 +554,16 @@ class NeoOperationBot:
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             log(f'{fName}: Cannot get action from data: {data}')
             return
         actionId = actionInfo['id']
-        reminderText = getActionInfoText(actionInfo=actionInfo)
-        self.sendMessage(callback.from_user.id, reminderText)
+        actionInfoText = getActionInfoText(actionInfo=actionInfo)
+        actionInfoMessageId = self.sendMessage(callback.from_user.id, actionInfoText)
+        # Save message ID
         keyboard = getActionMenu(actionId=actionId)
         message_sent = self.bot.send_message(telegramid,
                                              text='Выберите действие с задачей:',
@@ -540,7 +572,7 @@ class NeoOperationBot:
         # Save chat_id and message_id to hide later
         message_id = message_sent.id
         chat_id = telegramid
-        Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}')
+        Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}|{actionInfoMessageId}')
 
     def newActionHandler(self, message):
         fName = self.newActionHandler.__name__
@@ -553,6 +585,7 @@ class NeoOperationBot:
     def showRemindersHandler(self, callback:types.CallbackQuery):
         username = callback.from_user.username
         telegramid = callback.from_user.id
+        self.bot.answer_callback_query(callback.id)
         # Check user first
         if (not self.checkUser(username=username)):
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
@@ -573,9 +606,9 @@ class NeoOperationBot:
                 keyboard.add(key)
             self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
 
-    def showActionsHandler(self, callback:types.CallbackQuery):
-        username = callback.from_user.username
-        telegramid = callback.from_user.id
+    def showActionsHandler(self, message:types.Message):
+        username = message.from_user.username
+        telegramid = message.from_user.id
         # Check user first
         if (not self.checkUser(username=username)):
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
@@ -600,6 +633,7 @@ class NeoOperationBot:
         username = callback.from_user.username
         telegramid = callback.from_user.id
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
@@ -619,6 +653,7 @@ class NeoOperationBot:
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
@@ -642,7 +677,7 @@ class NeoOperationBot:
         actionId = actionInfo['id']
         retVal = False
         if (reminder == None):
-            reminder = getNextReminder()
+            reminder = getNextReminder(daysToDelay=1)
         ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
         if (ret):
             rTxt = self.getTimeDateTxt(reminder)
@@ -660,16 +695,19 @@ class NeoOperationBot:
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
+        newReminder = self.extractReminder(data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             return
-        self.setReminder(actionInfo=actionInfo)
+        self.setReminder(actionInfo=actionInfo,reminder=newReminder)
 
     def reminderStopActionHandler(self, callback:types.CallbackQuery):
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
@@ -685,14 +723,17 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
 
     def removeActionKeyboard(self, keyboardInfo):
+        print(keyboardInfo)
         fName = self.removeActionKeyboard.__name__
         if (keyboardInfo):
             res = keyboardInfo.split('|')
-            if (len(res) != 2):
-                log(f'{fName}: error getting message and chat: {keyboardInfo}', LOG_ERROR)
+            if (len(res) != 3):
+                log(f'{fName}: error getting messages and chat: {keyboardInfo}', LOG_ERROR)
                 return
             message_id = int(res[0])
             chat_id = int(res[1])
+            messageInfo_id = int(res[2])
+            self.bot.delete_message(message_id=messageInfo_id, chat_id=chat_id)
             self.bot.delete_message(message_id=message_id, chat_id=chat_id)
 
     def textAddHandler(self, callback:types.CallbackQuery):
@@ -700,6 +741,7 @@ class NeoOperationBot:
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
@@ -719,6 +761,7 @@ class NeoOperationBot:
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
@@ -738,6 +781,7 @@ class NeoOperationBot:
         telegramid = callback.from_user.id
         username = callback.from_user.username
         data = callback.data
+        self.bot.answer_callback_query(callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
