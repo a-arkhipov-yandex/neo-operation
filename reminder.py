@@ -21,15 +21,8 @@ def reminderTask(bot:telebot.TeleBot):
             actionId = actionInfo['id']
             username = actionInfo['username']
             telegramid = actionInfo['telegramid']
-            reminderText = "\U00002757 Reminder:" + getActionInfoText(actionInfo=actionInfo)
-            bot.send_message(telegramid, reminderText)
-            # Show actions to do with reminder: remind later, mark completed, mark cancelled
-            menuKeyboard = getActionMenu(actionId=actionId,reminder=True)
-            message = bot.send_message(telegramid, text='Выберите действие с задачей:', reply_markup=menuKeyboard)
-            message_id = message.id
-            chat_id = message.chat.id
-            # Save chat_id and message_id to hide later
-            Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}')
+            reminderText = "\U00002757 Reminder:"
+            showActonMenu(bot=bot, actionInfo=actionInfo, telegramid=telegramid, addText=reminderText)
             # Mark reminder as shown
             Connection.markReminderAsShown(username=username,actionId=actionId)
         lenReminders = len(actions)

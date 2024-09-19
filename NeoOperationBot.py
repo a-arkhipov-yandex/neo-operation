@@ -219,6 +219,23 @@ def getActionInfoText(actionInfo):
     '''
     return text
 
+def showActonMenu(bot:telebot.TeleBot, actionInfo, telegramid, addText=''):
+    username = actionInfo['username']
+    actionId = actionInfo['id']
+    # Send action info
+    actionInfoText = addText + getActionInfoText(actionInfo=actionInfo)
+    actionInfoMessage = bot.send_message(telegramid, actionInfoText) # Save message ID
+    keyboard = getActionMenu(actionId=actionId, active=(actionInfo['status'] == ACTION_ACTIVE))
+    message_sent = bot.send_message(telegramid,
+                                            text='Выберите действие с задачей:',
+                                            reply_markup=keyboard,
+                                            parse_mode='MarkdownV2')
+    actionInfoMessageId = actionInfoMessage.id
+    # Save chat_id and message_id to hide later
+    message_id = message_sent.id
+    chat_id = telegramid
+    Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}|{actionInfoMessageId}')
+
 #=====================
 # Bot class
 #---------------------
@@ -619,19 +636,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             log(f'{fName}: Cannot get action from data: {data}')
             return
-        actionId = actionInfo['id']
-        actionInfoText = getActionInfoText(actionInfo=actionInfo)
-        actionInfoMessageId = self.sendMessage(callback.from_user.id, actionInfoText)
-        # Save message ID
-        keyboard = getActionMenu(actionId=actionId, active=(actionInfo['status'] == ACTION_ACTIVE))
-        message_sent = self.bot.send_message(telegramid,
-                                             text='Выберите действие с задачей:',
-                                             reply_markup=keyboard,
-                                             parse_mode='MarkdownV2')
-        # Save chat_id and message_id to hide later
-        message_id = message_sent.id
-        chat_id = telegramid
-        Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}|{actionInfoMessageId}')
+        showActonMenu(bot = self.bot, actionInfo=actionInfo,telegramid=telegramid)
 
     def cmdNewActionHandler(self, message):
         fName = self.cmdNewActionHandler.__name__
