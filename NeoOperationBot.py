@@ -90,7 +90,8 @@ def getCurrentDateTime():
 # Returns: datetime object with new reminder
 def getNextReminder(hoursToDelay=None, daysToDelay=None):
     # Get current date
-    today = dt.now()
+    tzinfo=ZoneInfo('Europe/Moscow')
+    today = dt.now(tzinfo)
     delay = timedelta()
     reminder = ''
     if (hoursToDelay):
@@ -865,7 +866,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
         else:
             self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
-            self.sendMessage(telegramid, f'Что вы хотите добавить к задаче "{title}":')
+            self.sendMessage(telegramid, f'Что вы хотите добавить к задаче "{title}" ("/q" отмена):')
 
     def cmdSearchActionsHandler(self, message:types.Message, state):
         fName = self.cmdSearchActionsHandler.__name__
@@ -901,7 +902,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
         else:
             self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
-            self.sendMessage(telegramid, f'Введите новый заголовок для задачи {title}:')
+            self.sendMessage(telegramid, f'Введите новый заголовок для задачи "{title}" ("/q" отмена):')
 
     def hideMenuHandler(self, callback:types.CallbackQuery):
         fName = self.hideMenuHandler.__name__
