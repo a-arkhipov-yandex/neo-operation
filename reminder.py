@@ -22,7 +22,7 @@ def reminderTask(bot:telebot.TeleBot):
             username = actionInfo['username']
             telegramid = actionInfo['telegramid']
             reminderText = "\U00002757 Reminder:"
-            showActonMenu(bot=bot, actionInfo=actionInfo, telegramid=telegramid, addText=reminderText)
+            showActionMenu(bot=bot, actionInfo=actionInfo, telegramid=telegramid, addText=reminderText)
             # Mark reminder as shown
             Connection.markReminderAsShown(username=username,actionId=actionId)
         lenReminders = len(actions)

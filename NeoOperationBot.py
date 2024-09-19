@@ -219,7 +219,7 @@ def getActionInfoText(actionInfo):
     '''
     return text
 
-def showActonMenu(bot:telebot.TeleBot, actionInfo, telegramid, addText=''):
+def showActionMenu(bot:telebot.TeleBot, actionInfo, telegramid, addText=''):
     username = actionInfo['username']
     actionId = actionInfo['id']
     # Send action info
@@ -636,7 +636,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
             log(f'{fName}: Cannot get action from data: {data}')
             return
-        showActonMenu(bot = self.bot, actionInfo=actionInfo,telegramid=telegramid)
+        showActionMenu(bot = self.bot, actionInfo=actionInfo,telegramid=telegramid)
 
     def cmdNewActionHandler(self, message):
         fName = self.cmdNewActionHandler.__name__
@@ -717,8 +717,11 @@ class NeoOperationBot:
     def getActionsKeyboard(self, actions):
         keyboard = types.InlineKeyboardMarkup(); # keyboard
         for action in actions:
+            remTxt = ''
+            if (action['reminder']):
+                remTxt = ' \U0001F514'
             key = types.InlineKeyboardButton(
-                text=f'\U0001F4DA {action["title"]}',
+                text=f'\U0001F4DA {action["title"]}{remTxt}',
                 callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
             )
             keyboard.add(key)

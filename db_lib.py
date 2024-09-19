@@ -385,6 +385,7 @@ class Connection:
         fName = Connection.getActions.__name__
         params = {}
         addQuery = ''
+        orderBy = 'l.time_stamp'
         if (withReminders and withoutReminders):
             log(f'{fName}: Dont support both withReminders and withoutReminders', LOG_ERROR)
             return False
@@ -395,6 +396,7 @@ class Connection:
         if (active):
             addQuery = addQuery + ' and a.status = %(st)s '
             params['st'] = ACTION_ACTIVE
+            orderBy = 'a.reminder NULLS FIRST'
         if (actionId):
             addQuery = addQuery + ' and a.id = %(aId)s'
             params['aId'] = actionId
@@ -415,7 +417,7 @@ class Connection:
             join users as u on u.id = a.userid
             join logs as l on l.actionid = a.id
             {whereQuery} {addQuery} {reminderQuery}
-            order by l.time_stamp
+            order by {orderBy}
         '''
         # Execute query
         actions = []
