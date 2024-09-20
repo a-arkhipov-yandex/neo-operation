@@ -427,12 +427,12 @@ class NeoOperationBot:
     def replyHandler(self, message:types.Message):
         fName = self.replyHandler.__name__
         # Check current user state
+        username = message.from_user.username
+        id = message.from_user.id
         if (not self.checkUser(username=username)):
             log(f'{fName}: userCheck error - {username}', LOG_WARNING)
             self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return True
-        username = message.from_user.username
-        id = message.from_user.id
         state = Connection.getUserState(username=username)
         if (state == STATE_ACTIONTITLECHANGE):
             # Handle title change here
