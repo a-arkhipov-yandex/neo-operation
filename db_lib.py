@@ -257,7 +257,7 @@ class Connection:
                 st = status[1]
                 Connection.__actionStatuses[id] = st
         else:
-            log(f'{fName}: cannot get statuses from DB: {query}')
+            log(f'{fName}: cannot get statuses from DB: {query}',LOG_ERROR)
             return False
         return True
 
@@ -277,7 +277,7 @@ class Connection:
                 state = state[1]
                 Connection.__userStates[id] = state
         else:
-            log(f'{fName}: cannot get statuses from DB: {query}')
+            log(f'{fName}: cannot get statuses from DB: {query}',LOG_ERROR)
             return False
         return True
 
@@ -297,7 +297,7 @@ class Connection:
                 lType = logType[1]
                 Connection.__logTypes[id] = lType
         else:
-            log(f'{fName}: cannot get statuses from DB: {query}')
+            log(f'{fName}: cannot get statuses from DB: {query}',LOG_ERROR)
             return False
         return True
 
@@ -712,7 +712,7 @@ class Connection:
                 except (Exception, psycopg2.DatabaseError) as error:
                     log(f'{fName}: Failed delete action {actionId}: {error}',LOG_ERROR)
         else:
-            log(f'{fName}: Cannot find action to delete {actionId}')
+            log(f'{fName}: Cannot find action to delete {actionId}',LOG_ERROR)
         return ret
 
     #===============
