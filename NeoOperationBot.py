@@ -45,6 +45,8 @@ CALLBACK_ACTIONTEXTADD_TAG = 'textAdd:'
 CALLBACK_SEARCHACTIVEACTIONS_TAG = 'searchActiveActions:'
 CALLBACK_SEARCHALLACTIONS_TAG = 'searchAllActions:'
 
+DEFAULT_ERROR_MESSAGE = 'Произошла ошибка. Попробуйте позже.'
+
 #============================
 # Common functions
 #----------------------------
@@ -366,12 +368,15 @@ class NeoOperationBot:
 
     # Message handler
     def messageHandler(self, message:types.Message):
+        fName = self.messageHandler.__name__
         if (not NeoOperationBot.isInitialized()):
             log(f'Bot is not initialized - cannot start', LOG_ERROR)
             return
-        # Check if there is a CMD
-        if (message.text[0] == '/'):
-            return self.cmdHandler(message)
+        # Check if photo recieved
+        if (message.text != None):
+            # Check if there is a CMD
+            if (message.text[0] == '/'):
+                return self.cmdHandler(message)
         # Handle reply
         ret = self.replyHandler(message)
         if (not ret):
@@ -403,13 +408,21 @@ class NeoOperationBot:
 
     # Get forward nessage
     def getFromTxt(self, message:types.Message):
+        fName = self.getFromTxt.__name__
         fromTxt = None
         # Check fromard message
         if (message.forward_origin):
             try:
+                print(message)
                 fromTxt = message.forward_origin.sender_user.username
             except:
-                fromTxt = "!!!anonymus"
+                pass
+            if (not fromTxt): # Not found sender - check chat
+                try: 
+                    fromTxt = message.forward_origin.chat.title                
+                except:
+                    log(f'{fName}: Cannot get forward_origin: {message.forward_origin}',LOG_WARNING)
+                    fromTxt = "!!!anonymous!!!" # Default unknown sender
         return fromTxt
 
     def getTitleAndText(self, fromTxtTitle, fromTxtUser, txt:str):
@@ -428,13 +441,17 @@ class NeoOperationBot:
         fName = self.replyHandler.__name__
         # Check current user state
         username = message.from_user.username
-        id = message.from_user.id
+        telegramid = message.from_user.id
         if (not self.checkUser(username=username)):
             log(f'{fName}: userCheck error - {username}', LOG_WARNING)
-            self.sendMessage(id, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return True
         state = Connection.getUserState(username=username)
         if (state == STATE_ACTIONTITLECHANGE):
+            if (message.text == None):
+                log(f'{fName}: Empty message text.', LOG_ERROR)
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+                return
             # Handle title change here
             newTitle = message.text
             # Get action ID from DB
@@ -443,21 +460,25 @@ class NeoOperationBot:
             actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
             if (not dbFound(actionInfo)):
                 log(f'{fName}: Cannot find action id {actionId} for user {username}', LOG_ERROR)
-                self.sendMessage(id, 'Ошибка при изменении заголовка. Попробуйте позже.')
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
                 return True
             # update title
             ret = Connection.udpdateActionTitle(username=username, actionId=actionId, newTitle=newTitle)
             if (not ret):
                 log(f'{fName}: Error updating title action {actionId} for user {username}', LOG_ERROR)
-                self.sendMessage(id, 'Произошла ошибка - не могу поменять заголовок. Попробуйте позже.')
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
             else:
                 log(f'{fName}: Successfully changed action title: action {actionId}, new title {newTitle}')
-                self.sendMessage(id, f'Установлен новый заголовок "{newTitle}"')
+                self.sendMessage(telegramid, f'Установлен новый заголовок "{newTitle}"')
             # Clear state
             Connection.clearUserState(username=username)
             return True
         elif (state == STATE_ACTIONTEXTADD):
             # Handle add text here
+            if (message.text == None):
+                log(f'{fName}: Empty message text.', LOG_ERROR)
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+                return
             # Get timestamp
             curDate = getCurrentDateTime()
             addText = f'{curDate}: {message.text}'
@@ -465,22 +486,22 @@ class NeoOperationBot:
             userInfo = Connection.getUserInfoByName(username=username)
             if (not dbFound(userInfo)):
                 log(f'{fName}: Cannot find action id {actionId} for user {username}',LOG_ERROR)
-                self.sendMessage(id, 'Ошибка при изменении заголовка. Попробуйте позже.')
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
                 return True
             actionId = int(userInfo['state_data'])
             actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
             if (not dbFound(actionInfo)):
                 log(f'{fName}: Cannot find action id {actionId} for user {username}', LOG_ERROR)
-                self.sendMessage(id, 'Ошибка при изменении заголовка. Попробуйте позже.')
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
                 return True
             # update title
             ret = Connection.udpdateActionText(username=username, actionId=actionId, addText=addText)
             if (not ret):
                 log(f'{fName}: Error updating title action {actionId} for user {username}', LOG_ERROR)
-                self.sendMessage(id, 'Произошла ошибка - не могу добавить текст в задачу. Попробуйте позже')
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
             else:
                 log(f'{fName}: Successfully added text: action {actionId}, addText {addText}')
-                self.sendMessage(id, f'Добавление текста в задачу прошло успешно')
+                self.sendMessage(telegramid, f'Добавление текста в задачу прошло успешно')
             # Clear state
             Connection.clearUserState(username=username)
             return True
@@ -493,54 +514,69 @@ class NeoOperationBot:
         fromTxt = self.getFromTxt(message)
         textByUser = self.getForwardCache(username=username)
         self.clearForwardCache(username=username)
+        messageText = self.getMessageText(message)
         if (fromTxt and (textByUser and len(textByUser))): # there is text by user
-            text = message.text
+            text = messageText
             (title, text2) = self.getTitleAndText(fromTxtTitle=fromTxt, fromTxtUser=username, txt=textByUser)
             text = f"@{fromTxt}: {text}\n{text2}"
         else:
             if (not fromTxt):
                 fromTxt = username
-            textByUser = message.text
+            textByUser = messageText
             (title, text) = self.getTitleAndText(fromTxtTitle=fromTxt, fromTxtUser=fromTxt, txt=textByUser)
             text = f'{text}'
         actionId = Connection.addAction(username=username, title=title, text=text, fromTxt=fromTxt)
         if (not actionId):
             log(f'{fName}: Cannot create action for {username}', LOG_ERROR)
-            self.sendMessage(telegramid=id, text='Ошибка при создании задачи. Попробуйте позже')
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
             return True
-        self.sendMessage(id, f'Новая задача "{title}" создана успешно.')
+        self.sendMessage(telegramid, f'Новая задача "{title}" создана успешно.')
         Connection.clearUserState(username=username)
         # Add reminder to next day
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
         self.setReminder(actionInfo=actionInfo)
         return True
 
+    def getMessageText(self, message:types.Message):
+        fName = self.getMessageText.__name__
+        # Check message text first
+        messageText = message.text
+        if (messageText == None):
+            # Check photo
+            if (message.photo != None):
+                messageText = message.caption
+            else:
+                log(f'{fName}: Unknown message format received "{message}"', LOG_WARNING)
+                messageText = "Это текст по умолчанию - что-то пошло не так."
+        return messageText
+
     def cmdStartHandler(self, message:types.Message):
         fName = self.cmdStartHandler.__name__
         username = message.from_user.username
         telegramid = message.from_user.id
         # Check if user exists
-        if (not self.checkUser(username=username)):
-            # Register new user if not registered yet
-            userId = Connection.addUser(username=username, telegramid=telegramid)
-            if (not userId):
-                log(f'{fName}: Cannot register user {username}', LOG_ERROR)
-                self.sendMessage(telegramid, 'Ошибка при регистоации пользователя. Попробуйте позже.')
-            # Send welcome message
-            self.sendMessage(telegramid, 'Регистрация пользователя прошла успешно.')
-            self.cmdHelpHandler(message)
-        else:
-            # Show help message
-            self.cmdHelpHandler(message)
+        # Show help message
+        self.cmdHelpHandler(message)
 
     def cmdHandler(self, message:types.Message):
         fName = self.cmdHandler.__name__
         telegramid = message.from_user.id
         username = message.from_user.username
-        if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_WARNING)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+        if (username == None):
+            log(f'{fName}: No username', LOG_ERROR)
+            self.sendMessage(telegramid, f'У вас не установлен логин в телеграме. Пожалуйста, установите и попробуйте еще раз.')
             return
+        if (not self.checkUser(username=username)):
+            if (not dbLibCheckUserName(userName=username)):
+                log(f'{fName}: Incorrect username "{username}"', LOG_ERROR)
+                self.sendMessage(telegramid, f'Ваш логин содержит некорректные символы. У вас не получится использовать бот.')
+                return
+            # Register new user if not registered yet
+            userId = Connection.addUser(username=username, telegramid=telegramid)
+            if (not userId):
+                log(f'{fName}: Cannot register user {username}', LOG_ERROR)
+                self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+                return
         # Clear state
         Connection.clearUserState(username=username)
         text = message.text.lower()
@@ -707,12 +743,16 @@ class NeoOperationBot:
             log(f'{fName}: userCheck error - {username}', LOG_ERROR)
             self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
+        if (message.text == None):
+            log(f'{fName}: Empty message text.', LOG_ERROR)
+            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+            return
         text_to_search = message.text
         log(f'{fName} invoked with params state={state}, text={text_to_search}',LOG_DEBUG)
         # Check state
         if (not dbLibCheckUserState(state=state)):
             log(f'{fName}: Incorrect state provided: {state}', LOG_ERROR)
-            self.sendMessage(telegramid=telegramid, text='Произошла ошибка. Попробуйте позже.')
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
             return
         status = ACTION_ACTIVE
         if (state == STATE_SEARCHALLACTIONS):
@@ -766,7 +806,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" реактивирована.')
         else:
             log(f'{fName}: Cannot activate {actionId} action', LOG_ERROR)
-            self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
+            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
 
     def completeActionHandler(self, callback:types.CallbackQuery):
         fName = self.completeActionHandler.__name__
@@ -794,7 +834,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" помечена выполненой. Вы - молодец!')
         else:
             log(f'{fName}: Cannot complete {actionId} action', LOG_ERROR)
-            self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
+            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
 
     def cancelActionHandler(self, callback:types.CallbackQuery):
         fName = self.cancelActionHandler.__name__
@@ -821,7 +861,7 @@ class NeoOperationBot:
             self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" отменена.')
         else:
             log(f'{fName}: Cannot cancel {actionId} action', LOG_ERROR)
-            self.sendMessage(telegramid, f'Произошла ошибка. Попробуйте позже.')
+            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
 
     # If reminder is not provider set it to the next day
     # Returns: True/False
@@ -844,7 +884,7 @@ class NeoOperationBot:
             retVal = True
         else:
             log(f'{fName}: Error setting reminder {username} - {actionId} - {reminder}', LOG_ERROR)
-            self.sendMessage(telegramid, 'Произошла ошибка при установке напоминания. Попробуйте позже.')
+            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
         return retVal
 
     def reminderSetActionHandler(self, callback:types.CallbackQuery):
@@ -890,10 +930,9 @@ class NeoOperationBot:
             self.sendMessage(telegramid, f'Напоминание для задачи {actionInfo["title"]} удалено.')
         else:
             log(f'{fName}: Cannot cancel reminder for action {actionId} and data {data}', LOG_ERROR)
-            self.sendMessage(telegramid, 'Произошла ошибка. Попробуйте позже.')
+            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
 
     def removeActionKeyboard(self, keyboardInfo:str):
-        print(keyboardInfo)
         fName = self.removeActionKeyboard.__name__
         if (keyboardInfo):
             res = keyboardInfo.split('|')
@@ -926,7 +965,7 @@ class NeoOperationBot:
         ret = Connection.setUserState(username=username, state=STATE_ACTIONTEXTADD, data=actionInfo['id'])
         if (not ret):
             log(f'{fName}: Cannot save state {STATE_ACTIONTEXTADD} and data {actionInfo["id"]} for {username}',LOG_ERROR)
-            self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
         else:
             self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
             self.sendMessage(telegramid, f'Что вы хотите добавить к задаче "{title}" ("/q" отмена):')
@@ -942,12 +981,12 @@ class NeoOperationBot:
         # Check state first
         if (not dbLibCheckUserState(state=state)):
             log(f'{fName}: Incorrect state provided: {state}', LOG_ERROR)
-            self.sendMessage(telegramid=telegramid, text='Произошла ошибка. Попробуйте позже.')
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
             return
         ret = Connection.setUserState(username=username, state=state)
         if (not ret):
             log(f'{fName}: Cannot save state {state} for {username}',LOG_ERROR)
-            self.sendMessage(telegramid=telegramid, text="Ошибка активации поиска. Попробуйте позже.")
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
         else:
             self.sendMessage(telegramid, f'Введите текст для поиска в заголовке и/или в описании задачи:')
 
@@ -971,7 +1010,7 @@ class NeoOperationBot:
         ret = Connection.setUserState(username=username, state=STATE_ACTIONTITLECHANGE, data=actionInfo['id'])
         if (not ret):
             log(f'{fName}: Cannot save state {STATE_ACTIONTITLECHANGE} and data {actionInfo["id"]} for {username}',LOG_ERROR)
-            self.sendMessage(telegramid=telegramid, text="Ошибка при изменении заголовка задачи. Попробуйте позже.")
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
         else:
             self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
             self.sendMessage(telegramid, f'Введите новый заголовок для задачи "{title}" ("/q" отмена):')
