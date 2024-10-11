@@ -1,4 +1,6 @@
 import re
+from time import sleep
+from threading import Thread
 import psycopg2
 from log_lib import *
 
@@ -48,7 +50,7 @@ LOGTYPE_ACTIVATED = 9
 # Returns:
 #   True - item was not found
 #   False - otherwise (found or error)
-def dbNotFound(result):
+def dbNotFound(result) -> bool:
     if (result != None):
         if (result == NOT_FOUND): # empty array
             return True
@@ -58,7 +60,7 @@ def dbNotFound(result):
 # Returns:
 #   True - item has been found
 #   False - otherwise (not found or error)
-def dbFound(result):
+def dbFound(result) -> bool:
     if (result != None):
         if (result != NOT_FOUND): # empty array
             return True
@@ -91,18 +93,18 @@ def getDBbTestConnectionData():
     return data
 
 # Check user name (can be string with '[a-zA-Z][0-9a-zA-Z]')
-def dbLibCheckUserName(userName):
+def dbLibCheckUserName(userName) -> bool:
     if (userName == None):
         return False
     ret = False
-    res = re.match(r'^[a-zA-Z][a-zA-Z0-9-_]+$', userName)
+    res = re.match(r'^[a-zA-Z][a-zA-Z0-9-_]+$', string=userName)
     if res and len(userName) > 2:
         ret = True
     return ret
 
 # Check action status
 # Returns: True/False
-def dbLibCheckActionStatus(status):
+def dbLibCheckActionStatus(status) -> bool:
     try:
         intStatus = int(status)
     except:
@@ -112,7 +114,7 @@ def dbLibCheckActionStatus(status):
 
 # Check user state
 # Returns: True/False
-def dbLibCheckUserState(state):
+def dbLibCheckUserState(state) -> bool:
     try:
         intState = int(state)
     except:
@@ -140,12 +142,14 @@ class Connection:
     __userStates = {}
     __logTypes = {}
     __test = True # prod by default
+    __thread = None
+    loopFlag = True
 
     # Init connection - returns True/False
     def initConnection(test=False) -> bool:
         ret = False
         if (not Connection.__isInitialized):
-            Connection.__connection = Connection.__newConnection(test=test)
+            Connection.__newConnection(test=test)
             if (Connection.isActive()):
                 # Cache section
                 Connection.cacheActionStatuses()
@@ -167,18 +171,19 @@ class Connection:
     
     def closeConnection() -> None:
         if (Connection.isActive()):
+            Connection.pingStop()
+            Connection.__isInitialized = False
             Connection.__connection.close()
             log(str=f"DB Connection closed")
         else:
             log(str=f"DB Connection already closed",logLevel=LOG_WARNING)
-        Connection.__isInitialized = False
 
-    def __newConnection(test=False):
+    def __newConnection(test=False) -> bool:
         # Check if connection is open
         if (Connection.isActive()):
             log(str=f"Closing connection to DB",logLevel=LOG_WARNING)
             Connection.closeConnection()
-        conn = None
+        ret = False
         try:
             if (test):
                 data = getDBbTestConnectionData()
@@ -188,7 +193,7 @@ class Connection:
                 log(str=f'Cannot get env data. Exiting.',logLevel=LOG_ERROR)
                 return None
 
-            conn = psycopg2.connect(dsn=f"""
+            Connection.__connection = psycopg2.connect(dsn=f"""
                 host={data['dbhost']}
                 port={data['dbport']}
                 sslmode=verify-full
@@ -197,13 +202,15 @@ class Connection:
                 password={data['dbtoken']}
                 target_session_attrs=read-write
             """)
-            conn.autocommit = True
+            Connection.__connection.autocommit = True
             Connection.__isInitialized = True
+            Connection.startPingTask()
+            ret = True
             log(str=f'DB Connetion established')
         except (Exception, psycopg2.DatabaseError) as error:
             log(str=f"Cannot connect to database: {error}",logLevel=LOG_ERROR)
-            conn = None
-        return conn
+            ret = False
+        return ret
 
     def reconnect() -> bool:
         # check if connection was initialized before
@@ -1086,3 +1093,29 @@ class Connection:
         else:
             log(str=f'{fName}: Cannot get reminder for user {username}, action {actionId}', logLevel=LOG_ERROR)
         return ret
+
+    def startPingTask() -> None:
+        Connection.loopFlag = True
+        Connection.__thread = Thread(target=Connection.dbPingTask)
+        Connection.__thread.start()
+
+    def pingStop() -> None:
+        Connection.loopFlag = False
+        if (not Connection.__thread):
+            log(str='Ping thread is not active', logLevel=LOG_WARNING)
+        Connection.__thread.join()
+        Connection.__thread = None
+
+    def dbPingTask() -> None:
+        SLEEP_INTERVAL = 5
+        fName = Connection.dbPingTask.__name__
+        log(str=f'{fName}: thread started')
+        # infinite loop
+        while(Connection.loopFlag):
+            if (not Connection.isActive()):
+                log(str=f'{fName}: Database is not active, reconnecting')
+                if (not Connection.reconnect()):
+                    log(str=f'{fName}: Cannot reconnect to database', logLevel=LOG_WARNING)
+            sleep(SLEEP_INTERVAL)
+
+        log(str=f'{fName}: thread stopped')

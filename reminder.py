@@ -7,9 +7,9 @@ from NeoOperationBot import *
 loopFlag = True
 SLEEP_INTERVAL = 5
 
-def reminderTask(bot:telebot.TeleBot):
+def reminderTask(bot:telebot.TeleBot) -> None:
     fName = reminderTask.__name__
-    log(f'{fName}: Reminder thread is started')
+    log(str=f'{fName}: Reminder thread is started')
     # infinite loop
     while(loopFlag):
         sleep(SLEEP_INTERVAL)
@@ -27,5 +27,5 @@ def reminderTask(bot:telebot.TeleBot):
             Connection.markReminderAsShown(username=username,actionId=actionId)
         lenReminders = len(actions)
         if (lenReminders != 0):
-            log(f'{fName}: Handled {lenReminders} reminders. Sleeping...')
-    log(f'{fName}: Reminder thread stopped')
+            log(str=f'{fName}: Handled {lenReminders} reminders. Sleeping...')
+    log(str=f'{fName}: Reminder thread stopped')

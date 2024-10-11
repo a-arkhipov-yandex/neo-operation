@@ -50,7 +50,7 @@ DEFAULT_ERROR_MESSAGE = 'Произошла ошибка. Попробуйте �
 #============================
 # Common functions
 #----------------------------
-def isTestBot():
+def isTestBot() -> bool:
     load_dotenv()
     ret = True
     testbot = getenv(ENV_TESTBOT)
