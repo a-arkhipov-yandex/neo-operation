@@ -218,6 +218,7 @@ class Connection:
             log(str='Connection was not initialized. Cannot reconnect.', logLevel=LOG_ERROR)
             return False
         if (not Connection.isActive()):
+            Connection.pingStop()
             return Connection.__newConnection(test=Connection.__test)
 
     def isInitialized() -> bool:
@@ -765,7 +766,7 @@ class Connection:
     def addUser(username, telegramid):
         fName = Connection.addUser.__name__
         if (not Connection.isActive() and not Connection.reconnect()):
-            log(str="{fName}: Cannot insert user - connection is not initialized",logLevel=LOG_ERROR)
+            log(str=f"{fName}: Cannot insert user - connection is not initialized",logLevel=LOG_ERROR)
             return None
         ret = dbLibCheckUserName(userName=username)
         if (not ret):

@@ -421,7 +421,7 @@ class NeoOperationBot:
                 try: 
                     fromTxt = message.forward_origin.chat.title                
                 except:
-                    log(f'{fName}: Cannot get forward_origin: {message.forward_origin}',LOG_WARNING)
+                    log(str=f'{fName}: Cannot get forward_origin: {message.forward_origin}',logLevel=LOG_WARNING)
                     fromTxt = "!!!anonymous!!!" # Default unknown sender
         return fromTxt
 
