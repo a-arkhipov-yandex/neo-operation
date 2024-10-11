@@ -122,7 +122,7 @@ def dbLibCheckUserState(state):
 
 # Check logType
 # Returns: True/False
-def dbLibCheckLogType(logType):
+def dbLibCheckLogType(logType) -> bool:
     try:
         intLogType = int(logType)
     except:
@@ -141,21 +141,21 @@ class Connection:
     __logTypes = {}
 
     # Init connection - returns True/False
-    def initConnection(token=None, test=False):
+    def initConnection(token=None, test=False) -> bool:
         ret = False
         if (not Connection.__isInitialized):
-            Connection.__connection = Connection.__newConnection(token, test)
+            Connection.__connection = Connection.__newConnection(token=token, test=test)
             if (Connection.isInitialized()):
                 # Cache section
                 Connection.cacheActionStatuses()
                 Connection.cacheUserStates()
                 Connection.cacheLogTypes()
-                log(f"DB Connection created (test={test})", LOG_DEBUG)
+                log(str=f"DB Connection created (test={test})", logLevel=LOG_DEBUG)
                 ret = True
             else:
-                log(f'Cannot initialize connection to DB',LOG_ERROR)
+                log(str=f'Cannot initialize connection to DB',logLevel=LOG_ERROR)
         else:
-                log(f'Trying to initialize connection that already initialized',LOG_WARNING)
+                log(str=f'Trying to initialize connection that already initialized',logLevel=LOG_WARNING)
         return ret
     
     def getConnection():
@@ -163,11 +163,11 @@ class Connection:
             return None
         return Connection.__connection
     
-    def closeConnection():
+    def closeConnection() -> None:
         if (Connection.__isInitialized):
             Connection.__connection.close()
             Connection.__isInitialized = False
-            log(f"DB Connection closed")
+            log(str=f"DB Connection closed")
 
     def __newConnection(token=None, test=False):
         conn = None
@@ -177,10 +177,10 @@ class Connection:
             else: # Production
                 data = getDBbConnectionData()
             if (data == None):
-                log(f'Cannot get env data. Exiting.',LOG_ERROR)
+                log(str=f'Cannot get env data. Exiting.',logLevel=LOG_ERROR)
                 return
 
-            conn = psycopg2.connect(f"""
+            conn = psycopg2.connect(dsn=f"""
                 host={data['dbhost']}
                 port={data['dbport']}
                 sslmode=verify-full
@@ -188,12 +188,13 @@ class Connection:
                 user={data['dbuser']}
                 password={data['dbtoken']}
                 target_session_attrs=read-write
+                reconnect=True
             """)
             conn.autocommit = True
             Connection.__isInitialized = True
-            log(f'DB Connetion established')
+            log(str=f'DB Connetion established')
         except (Exception, psycopg2.DatabaseError) as error:
-            log(f"Cannot connect to database: {error}",LOG_ERROR)
+            log(str=f"Cannot connect to database: {error}",logLevel=LOG_ERROR)
             conn = None
         
         return conn

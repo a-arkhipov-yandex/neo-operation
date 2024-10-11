@@ -7,7 +7,7 @@ from NeoOperationBot import *
 #===============
 # Main section
 #---------------
-def main():
+def main() -> None:
     global loopFlag
     initLog()
     TESTCONNECTION = isTestDB()

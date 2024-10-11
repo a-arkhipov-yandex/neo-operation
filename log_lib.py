@@ -34,56 +34,56 @@ class Log:
 
     def logFileRotation(logFile):
         # Check if log file exist
-        if (path.isfile(logFile)):
+        if (path.isfile(path=logFile)):
             # Copy existing file and add '.bak' at the end
-            shutil.copyfile(logFile, logFile + '.bak')
+            shutil.copyfile(src=logFile, dst=logFile + '.bak')
 
     # Log startup attempt
-    def logStart():
+    def logStart() -> None:
         load_dotenv()
         # Read logStartFile from env
-        logFile = getenv(ENV_LOGSTARTFILE)
+        logFile = getenv(key=ENV_LOGSTARTFILE)
         if (not logFile):
             logFile = DEFAULT_LOGSTARTFILE
         try:
-            f = open(logFile, 'a')
-            tzinfo=ZoneInfo('Europe/Moscow')
-            startTime = dt.now(tzinfo).strftime("%d-%m-%Y %H:%M:%S")
+            f = open(file=logFile, mode='a')
+            tzinfo=ZoneInfo(key='Europe/Moscow')
+            startTime = dt.now(tz=tzinfo).strftime("%d-%m-%Y %H:%M:%S")
             f.write(f'{startTime}: NeoOperation_bot started'+"\n")
         except Exception as error:
-            log(f'Cannot open "{logFile}": {error}', LOG_ERROR)
+            log(str=f'Cannot open "{logFile}": {error}', logLevel=LOG_ERROR)
         f.close()
 
-def initLog(logFile=None, printToo=False):
+def initLog(logFile=None, printToo=False) -> None:
     load_dotenv()
     if (not logFile):
         # Read logFile from env
-        logFile = getenv(ENV_LOGFILE)
+        logFile = getenv(key=ENV_LOGFILE)
         if (not logFile):
             logFile = DEFAULT_LOGFILE
     Log.logFileName = logFile
     # Read log level from ENV
-    logLevel = getenv(ENV_LOGLEVEL)
+    logLevel = getenv(key=ENV_LOGLEVEL)
     if (logLevel):
         # Check that this level exist
         ret = LOG_LEVELS.get(logLevel)
         if (ret): # ENV log level exists
             Log.logCurrentLevel = logLevel
     # Check if need to printout messages
-    printTooEnv = getenv(ENV_PRINTTOO)
+    printTooEnv = getenv(key=ENV_PRINTTOO)
     if (printTooEnv and printTooEnv == 'True'):
         printToo = True
-    Log.logFileRotation(logFile)
+    Log.logFileRotation(logFile=logFile)
     # Open log file for writing
     try:
-        f = open(logFile, 'w')
+        f = open(file=logFile, mode='w')
         Log.logHandle = f
     except Exception as error:
-        log(f'Cannot open "{logFile}": {error}', LOG_ERROR)
+        log(str=f'Cannot open "{logFile}": {error}', logLevel=LOG_ERROR)
     if (printToo == True):
         Log.printToo = printToo
     Log.logStart()
-    log(f'Log initialization complete: log file={Log.logFileName} | log level={Log.logCurrentLevel}')
+    log(str=f'Log initialization complete: log file={Log.logFileName} | log level={Log.logCurrentLevel}')
 
 def log(str, logLevel=LOG_INFO):
     # Check log level first
@@ -94,15 +94,15 @@ def log(str, logLevel=LOG_INFO):
     else:
         # Get date and time
         tzinfo=ZoneInfo('Europe/Moscow')
-        time = dt.now(tzinfo).strftime("%d-%m-%Y %H:%M:%S")
-        logStr = f'[{time}]:{logLevel}:{str}'
+        time: str = dt.now(tz=tzinfo).strftime("%d-%m-%Y %H:%M:%S")
+        logStr: str = f'[{time}]:{logLevel}:{str}'
         Log.logHandle.write(logStr+"\n")
         Log.logHandle.flush()
         # Print message if set
         if (Log.printToo == True):
             print(logStr)
 
-def closeLog():
+def closeLog() -> None:
     if (Log.logHandle):
-        log(f'Closing log')
+        log(str=f'Closing log')
         Log.logHandle.close()
