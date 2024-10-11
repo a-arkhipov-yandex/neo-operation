@@ -11,7 +11,9 @@ def main() -> None:
     global loopFlag
     initLog()
     TESTCONNECTION = isTestDB()
-    Connection.initConnection(test=TESTCONNECTION)
+    if (not Connection.initConnection(test=TESTCONNECTION)):
+        log(str='Exiting', logLevel=LOG_ERROR)
+        return 1
     bot = NeoOperationBot()
     # Run thread
     thread = Thread(target=reminderTask, args=[bot.getBot()])

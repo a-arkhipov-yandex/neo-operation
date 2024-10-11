@@ -139,17 +139,19 @@ class Connection:
     __actionStatuses = {}
     __userStates = {}
     __logTypes = {}
+    __test = True # prod by default
 
     # Init connection - returns True/False
-    def initConnection(token=None, test=False) -> bool:
+    def initConnection(test=False) -> bool:
         ret = False
         if (not Connection.__isInitialized):
-            Connection.__connection = Connection.__newConnection(token=token, test=test)
-            if (Connection.isInitialized()):
+            Connection.__connection = Connection.__newConnection(test=test)
+            if (Connection.isActive()):
                 # Cache section
                 Connection.cacheActionStatuses()
                 Connection.cacheUserStates()
                 Connection.cacheLogTypes()
+                Connection.__test = test
                 log(str=f"DB Connection created (test={test})", logLevel=LOG_DEBUG)
                 ret = True
             else:
@@ -164,12 +166,18 @@ class Connection:
         return Connection.__connection
     
     def closeConnection() -> None:
-        if (Connection.__isInitialized):
+        if (Connection.isActive()):
             Connection.__connection.close()
-            Connection.__isInitialized = False
             log(str=f"DB Connection closed")
+        else:
+            log(str=f"DB Connection already closed",logLevel=LOG_WARNING)
+        Connection.__isInitialized = False
 
-    def __newConnection(token=None, test=False):
+    def __newConnection(test=False):
+        # Check if connection is open
+        if (Connection.isActive()):
+            log(str=f"Closing connection to DB",logLevel=LOG_WARNING)
+            Connection.closeConnection()
         conn = None
         try:
             if (test):
@@ -178,7 +186,7 @@ class Connection:
                 data = getDBbConnectionData()
             if (data == None):
                 log(str=f'Cannot get env data. Exiting.',logLevel=LOG_ERROR)
-                return
+                return None
 
             conn = psycopg2.connect(dsn=f"""
                 host={data['dbhost']}
@@ -188,7 +196,6 @@ class Connection:
                 user={data['dbuser']}
                 password={data['dbtoken']}
                 target_session_attrs=read-write
-                reconnect=True
             """)
             conn.autocommit = True
             Connection.__isInitialized = True
@@ -196,11 +203,21 @@ class Connection:
         except (Exception, psycopg2.DatabaseError) as error:
             log(str=f"Cannot connect to database: {error}",logLevel=LOG_ERROR)
             conn = None
-        
         return conn
 
-    def isInitialized():
+    def reconnect() -> bool:
+        # check if connection was initialized before
+        if (not Connection.isInitialized()):
+            log(str='Connection was not initialized. Cannot reconnect.', logLevel=LOG_ERROR)
+            return False
+        if (not Connection.isActive()):
+            return Connection.__newConnection(test=Connection.__test)
+
+    def isInitialized() -> bool:
         return Connection.__isInitialized
+
+    def isActive() -> bool:
+        return Connection.__isInitialized and Connection.getConnection().closed == 0
 
     # Execute query with params
     # If 'all' == True - execute fetchAll()/ otherwise fetchOne()
@@ -209,14 +226,14 @@ class Connection:
     #   NOT_FOUND - if nothing found
     #   [result] - array with one/many found item(s)
     def executeQuery(query, params={}, all=False):
-        if (not Connection.isInitialized()):
-            log(f'Cannot execute query "{query}" with "{params}" (all={all}): connection is not initialized', LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f'Cannot execute query "{query}" with "{params}" (all={all}): connection is not closed', logLevel=LOG_ERROR)
             return None
         ret = NOT_FOUND
         conn = Connection.getConnection()
         with conn.cursor() as cur:
             try:
-                cur.execute(query,params)
+                cur.execute(query=query,vars=params)
                 if (all):
                     res = cur.fetchall()
                     if (len(res) == 0):
@@ -237,8 +254,8 @@ class Connection:
                             ret = []
                             for i in res:
                                 ret.append(i)
-            except (Exception, psycopg2.DatabaseError) as error:
-                log(f'Failed execute query "{query}" with params "{params}" (all={all}): {error}',LOG_ERROR)
+            except (Exception, psycopg2.DatabaseError, psycopg2.OperationalError) as error:
+                log(str=f'Failed execute query "{query}" with params "{params}" (all={all}): {error}',logLevel=LOG_ERROR)
                 return None
         return ret
 
@@ -247,18 +264,18 @@ class Connection:
         return Connection.__actionStatuses
 
     # Read acton statuses and cache them in memory
-    def cacheActionStatuses():
+    def cacheActionStatuses() -> bool:
         fName = Connection.cacheActionStatuses.__name__
         query = 'select id, name from statuses'
         statuses = Connection.executeQuery(query=query, params={}, all=True)
-        if (dbFound(statuses)):
+        if (dbFound(result=statuses)):
             # Cache them in memory
             for status in statuses:
                 id = int(status[0])
                 st = status[1]
                 Connection.__actionStatuses[id] = st
         else:
-            log(f'{fName}: cannot get statuses from DB: {query}',LOG_ERROR)
+            log(str=f'{fName}: cannot get statuses from DB: {query}',logLevel=LOG_ERROR)
             return False
         return True
 
@@ -267,18 +284,18 @@ class Connection:
         return Connection.__userStates
 
     # Read acton statuses and cache them in memory
-    def cacheUserStates():
+    def cacheUserStates() -> bool:
         fName = Connection.cacheUserStates.__name__
         query = 'select id, state from states'
         states = Connection.executeQuery(query=query, params={}, all=True)
-        if (dbFound(states)):
+        if (dbFound(result=states)):
             # Cache them in memory
             for state in states:
                 id = int(state[0])
                 state = state[1]
                 Connection.__userStates[id] = state
         else:
-            log(f'{fName}: cannot get statuses from DB: {query}',LOG_ERROR)
+            log(str=f'{fName}: cannot get statuses from DB: {query}',logLevel=LOG_ERROR)
             return False
         return True
 
@@ -287,18 +304,18 @@ class Connection:
         return Connection.__logTypes
 
     # Read acton statuses and cache them in memory
-    def cacheLogTypes():
+    def cacheLogTypes() -> bool:
         fName = Connection.cacheLogTypes.__name__
         query = 'select id, type from logtypes'
         logTypes = Connection.executeQuery(query=query, params={}, all=True)
-        if (dbFound(logTypes)):
+        if (dbFound(result=logTypes)):
             # Cache them in memory
             for logType in logTypes:
                 id = int(logType[0])
                 lType = logType[1]
                 Connection.__logTypes[id] = lType
         else:
-            log(f'{fName}: cannot get statuses from DB: {query}',LOG_ERROR)
+            log(str=f'{fName}: cannot get statuses from DB: {query}',logLevel=LOG_ERROR)
             return False
         return True
 
@@ -307,7 +324,7 @@ class Connection:
     #----------------
     def parseActionData(rawAction):
         action = {}
-        if (dbFound(rawAction) and (len(rawAction) == 13)):
+        if (dbFound(result=rawAction) and (len(rawAction) == 13)):
             action['id'] = int(rawAction[0])
             action['userid'] = int(rawAction[1])
             action['username'] = rawAction[2]
@@ -333,18 +350,18 @@ class Connection:
     #   ID - id of new actoins
     def addAction(username, title, text, fromTxt):
         fName = Connection.addAction.__name__
-        if (not Connection.isInitialized()):
-            log("{fName}: Cannot insert action - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str="{fName}: Cannot insert action - connection is not initialized",logLevel=LOG_ERROR)
             return None
-        ret = dbLibCheckUserName(username)
+        ret = dbLibCheckUserName(userName=username)
         if (not ret):
-            log(f"{fName}: Cannot insert action -  invalid user name format",LOG_ERROR)
+            log(str=f"{fName}: Cannot insert action -  invalid user name format",logLevel=LOG_ERROR)
             return None
         ret = None
         # get user id
-        userId = Connection.getUserIdByName(username)
+        userId = Connection.getUserIdByName(username=username)
         conn = Connection.getConnection()
-        if (dbFound(userId)):
+        if (dbFound(result=userId)):
             query = '''
                 INSERT INTO actions (userid,title,text,"from",created,status)
                 VALUES (%(uId)s,%(ti)s,%(te)s,%(fr)s,NOW(),%(st)s)
@@ -353,26 +370,26 @@ class Connection:
             params = {'uId':userId,'ti':title,'te':text,'fr':fromTxt,'st':ACTION_ACTIVE}
             with conn.cursor() as cur:
                 try:
-                    cur.execute(query, params)
+                    cur.execute(query=query, vars=params)
                     row = cur.fetchone()
                     if (row):
                         ret = row[0]
-                        log(f'{fName}: Inserted action: {username} - {title}')
+                        log(str=f'{fName}: Inserted action: {username} - {title}')
                     else:
-                        log(f'{fName}: Cannot get id of new action: {query}',LOG_ERROR)
+                        log(str=f'{fName}: Cannot get id of new action: {query}',logLevel=LOG_ERROR)
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed insert action {username} - {title}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed insert action {username} - {title}: {error}',logLevel=LOG_ERROR)
             if (ret):
                 # Add log
                 Connection.addLog(actionId=ret, logType=LOGTYPE_CREATED, noCheck=True) # do not check action existance
         else:
-            log(f'{fName}: Cannot get user from DB: {username}',LOG_ERROR)
+            log(str=f'{fName}: Cannot get user from DB: {username}',logLevel=LOG_ERROR)
         return ret
 
     # Get action info
     def getActionInfo(username, actionId):
         actionInfo = Connection.getActions(username=username, actionId=actionId)
-        if (dbFound(actionInfo)):
+        if (dbFound(result=actionInfo)):
             actionInfo = actionInfo[0] # Extract the only item
         else:
             actionInfo = NOT_FOUND
@@ -388,7 +405,7 @@ class Connection:
         addQuery = ''
         orderBy = 'l.time_stamp'
         if (withReminders and withoutReminders):
-            log(f'{fName}: Dont support both withReminders and withoutReminders', LOG_ERROR)
+            log(str=f'{fName}: Dont support both withReminders and withoutReminders', logLevel=LOG_ERROR)
             return False
         whereQuery = f' where l.logtype = {LOGTYPE_CREATED} '
         if (username):
@@ -423,13 +440,13 @@ class Connection:
         # Execute query
         actions = []
         actionsRet = Connection.executeQuery(query=query, params=params, all=True)
-        if (dbFound(actionsRet)):
+        if (dbFound(result=actionsRet)):
             for rawAction in actionsRet:
-                action = Connection.parseActionData(rawAction)
+                action = Connection.parseActionData(rawAction=rawAction)
                 if (action):
                     actions.append(action)
         elif (actionsRet == None):
-            log(f'{fName}: cannot get user actions: {query} | {params}: DB issue', LOG_ERROR)
+            log(str=f'{fName}: cannot get user actions: {query} | {params}: DB issue', logLevel=LOG_ERROR)
             actions = None
         else:
             # For list return [] for actionId - NOT FOUND
@@ -466,13 +483,13 @@ class Connection:
         # Execute query
         actions = []
         actionsRet = Connection.executeQuery(query=query, params=params, all=True)
-        if (dbFound(actionsRet)):
+        if (dbFound(result=actionsRet)):
             for rawAction in actionsRet:
-                action = Connection.parseActionData(rawAction)
+                action = Connection.parseActionData(rawAction=rawAction)
                 if (action):
                     actions.append(action)
         elif (actionsRet == None):
-            log(f'{fName}: cannot search actions: {query} | {params}: DB issue', LOG_ERROR)
+            log(str=f'{fName}: cannot search actions: {query} | {params}: DB issue', logLevel=LOG_ERROR)
             actions = None
         return actions
 
@@ -488,7 +505,7 @@ class Connection:
     # Returns:
     #   False - error or no user or no action
     #   True - action completed successfully
-    def completeAction(actionId, username):
+    def completeAction(actionId, username) -> bool:
         fName = Connection.completeAction.__name__
         # Check that action belongs to user
         actionsInfo = Connection.getActions(actionId=actionId)
@@ -497,88 +514,88 @@ class Connection:
             actionInfo = actionsInfo[0] # Get the only record
             # Check user
             if (actionInfo['username'] != username):
-                log(f'{fName}: Action {actionId} doesnt belog to user {username}', LOG_ERROR)
+                log(str=f'{fName}: Action {actionId} doesnt belog to user {username}', logLevel=LOG_ERROR)
                 return ret
-            ret = Connection.changeActionStatus(actionId, ACTION_COMPLETED)
+            ret = Connection.changeActionStatus(actionId=actionId, status=ACTION_COMPLETED)
             if (ret):
                 log(f'Action {actionId} completed')
                 Connection.addLog(actionId=actionId, logType=LOGTYPE_COMPLETED)
         else:
-            log(f'{fName}: Cannot find action to complete {username} - {actionId}', LOG_ERROR)
+            log(str=f'{fName}: Cannot find action to complete {username} - {actionId}', logLevel=LOG_ERROR)
         return ret
 
     # Activate action for user username
     # Returns:
     #   False - error or no user or no action
     #   True - action completed successfully
-    def activateAction(actionId, username):
+    def activateAction(actionId, username) -> bool:
         fName = Connection.completeAction.__name__
         # Check that action belongs to user
         actionsInfo = Connection.getActions(actionId=actionId)
         ret = False
-        if (dbFound(actionsInfo) and (len(actionsInfo) == 1)):
+        if (dbFound(result=actionsInfo) and (len(actionsInfo) == 1)):
             actionInfo = actionsInfo[0] # Get the only record
             # Check user
             if (actionInfo['username'] != username):
-                log(f'{fName}: Action {actionId} doesnt belog to user {username}', LOG_ERROR)
+                log(str=f'{fName}: Action {actionId} doesnt belog to user {username}', logLevel=LOG_ERROR)
                 return ret
-            ret = Connection.changeActionStatus(actionId, ACTION_ACTIVE)
+            ret = Connection.changeActionStatus(actionId=actionId, status=ACTION_ACTIVE)
             if (ret):
-                log(f'Action {actionId} activated')
+                log(str=f'Action {actionId} activated')
                 Connection.addLog(actionId=actionId, logType=LOGTYPE_ACTIVATED)
         else:
-            log(f'{fName}: Cannot find action to activate {username} - {actionId}', LOG_ERROR)
+            log(str=f'{fName}: Cannot find action to activate {username} - {actionId}', logLevel=LOG_ERROR)
         return ret
 
     # Cancel action for user username
     # Returns:
     #   False - error or no user or no action
     #   True - action completed successfully
-    def cancelAction(actionId, username):
+    def cancelAction(actionId, username) -> bool:
         fName = Connection.cancelAction.__name__
         # Check that action belongs to user
         actionsInfo = Connection.getActions(actionId=actionId)
         ret = False
-        if (dbFound(actionsInfo) and (len(actionsInfo) == 1)):
+        if (dbFound(result=actionsInfo) and (len(actionsInfo) == 1)):
             actionInfo = actionsInfo[0] # Get the only record
             # Check user
             if (actionInfo['username'] != username):
-                log(f'{fName}: Action {actionId} doesnt belog to user {username}', LOG_ERROR)
+                log(str=f'{fName}: Action {actionId} doesnt belog to user {username}', logLevel=LOG_ERROR)
                 return ret
-            ret = Connection.changeActionStatus(actionId, ACTION_CANCELLED)
+            ret = Connection.changeActionStatus(actionId=actionId, status=ACTION_CANCELLED)
             if (ret):
-                log(f'Action {actionId} cancelled')
+                log(str=f'Action {actionId} cancelled')
                 Connection.addLog(actionId=actionId, logType=LOGTYPE_CANCELLED)
         else:
-            log(f'{fName}: Cannot find action to cancel {username} - {actionId}', LOG_ERROR)
+            log(str=f'{fName}: Cannot find action to cancel {username} - {actionId}', logLevel=LOG_ERROR)
         return ret
 
     # Complete or Cancel action for user username
     # Returns:
     #   False - error or no user or no action
     #   True - action completed successfully
-    def changeActionStatus(actionId, status):
+    def changeActionStatus(actionId, status) -> bool:
         fName = Connection.changeActionStatus.__name__
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot complete or cancel action {actionId} - connection is not initialized",logLevel=LOG_ERROR)
             return False
         # Check new status first
         if (status != ACTION_COMPLETED and status != ACTION_CANCELLED and status != ACTION_ACTIVE):
-            log(f"{fName}: Wrong status provided {actionId} - {status}",LOG_ERROR)
+            log(str=f"{fName}: Wrong status provided {actionId} - {status}",logLevel=LOG_ERROR)
             return False
         ret = False
         actionsInfo = Connection.getActions(actionId=actionId)
         if (actionsInfo == None):
-            log(f'{fName}: cannot get action {actionId}: DB issue',LOG_ERROR)
+            log(str=f'{fName}: cannot get action {actionId}: DB issue',logLevel=LOG_ERROR)
             return ret
-        if (dbFound(actionsInfo)):
+        if (dbFound(result=actionsInfo)):
             actionInfo = actionsInfo[0] # get first and the only element
             # Check that action is not completed yet
             if (actionInfo['status'] != ACTION_ACTIVE and status != ACTION_ACTIVE):
-                log(f'{fName}: Action {actionId} is already completed - cannot complete', LOG_ERROR)
+                log(str=f'{fName}: Action {actionId} is already completed - cannot complete', logLevel=LOG_ERROR)
                 return False
             elif (actionInfo['status'] == ACTION_ACTIVE and status == ACTION_ACTIVE):
-                log(f'{fName}: Action {actionId} is already active - cannot activate', LOG_ERROR)
+                log(str=f'{fName}: Action {actionId} is already active - cannot activate', logLevel=LOG_ERROR)
                 return False
             conn = Connection.getConnection()
             with conn.cursor() as cur:
@@ -586,134 +603,134 @@ class Connection:
                 reminder=%(rem)s where id = %(id)s
             '''
                 try:
-                    cur.execute(query,{'st':status,'id':actionId, 'rem':None, 'sh':None})
-                    log(f'{fName}: Updated action: {actionId} - {status}')
+                    cur.execute(query=query,vars={'st':status,'id':actionId, 'rem':None, 'sh':None})
+                    log(str=f'{fName}: Updated action: {actionId} - {status}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed complete or cancel action {actionId}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed complete or cancel action {actionId}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f"{fName}: Cannot find action {actionId}",LOG_ERROR)
+            log(str=f"{fName}: Cannot find action {actionId}",logLevel=LOG_ERROR)
         return ret
 
     # Update action title
     # Returns:
     #   False - error or no user or no action
     #   True - action title updated successfully
-    def udpdateActionTitle(username, actionId, newTitle):
+    def udpdateActionTitle(username, actionId, newTitle) -> bool:
         fName = Connection.udpdateActionTitle.__name__
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot update title for action {actionId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot update title for action {actionId} - connection is not initialized",logLevel=LOG_ERROR)
             return False
         ret = False
         actionInfo = Connection.getActionInfo(username=username,actionId=actionId)
         if (actionInfo == None):
-            log(f'{fName}: cannot update action title for action {actionId}: DB issue',LOG_ERROR)
+            log(str=f'{fName}: cannot update action title for action {actionId}: DB issue',logLevel=LOG_ERROR)
             return ret
-        if (dbFound(actionInfo)):
+        if (dbFound(result=actionInfo)):
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = 'update actions set title =%(t)s where id = %(id)s'
                 try:
-                    cur.execute(query,{'t':newTitle,'id':actionId})
-                    log(f'{fName}: Updated title for action: {actionId} - {newTitle}')
+                    cur.execute(query=query,vars={'t':newTitle,'id':actionId})
+                    log(str=f'{fName}: Updated title for action: {actionId} - {newTitle}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed update title for action {actionId} - {newTitle}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed update title for action {actionId} - {newTitle}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f"{fName}: Cannot find action to update title {actionId}",LOG_ERROR)
+            log(str=f"{fName}: Cannot find action to update title {actionId}",logLevel=LOG_ERROR)
         if (ret):
             # Log update
             if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_TITLEUPDATED)):
-                log(f"{fName}: Cannot add log {LOGTYPE_TITLEUPDATED} for action {actionId}",LOG_ERROR)
+                log(str=f"{fName}: Cannot add log {LOGTYPE_TITLEUPDATED} for action {actionId}",logLevel=LOG_ERROR)
         return ret
 
     # Update action text (add new text to the end of action text)
     # Returns:
     #   False - error or no user or no action
     #   True - action text added successfully
-    def udpdateActionText(username, actionId, addText):
+    def udpdateActionText(username, actionId, addText) -> bool:
         fName = Connection.udpdateActionText.__name__
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot add text to action {actionId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot add text to action {actionId} - connection is not initialized",logLevel=LOG_ERROR)
             return False
         ret = False
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
         if (actionInfo == None):
-            log(f'{fName}: cannot add text to action {actionId}: DB issue',LOG_ERROR)
+            log(str=f'{fName}: cannot add text to action {actionId}: DB issue',logLevel=LOG_ERROR)
             return ret
-        if (dbFound(actionInfo)):
+        if (dbFound(result=actionInfo)):
             newText = f"{actionInfo['text']}\n{addText}"
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = 'update actions set text =%(text)s where id = %(id)s'
                 try:
-                    cur.execute(query,{'text':newText,'id':actionId})
-                    log(f'{fName}: Added action text for action: {actionId} - {addText}')
+                    cur.execute(query=query,vars={'text':newText,'id':actionId})
+                    log(str=f'{fName}: Added action text for action: {actionId} - {addText}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed add text to action {actionId} - {addText}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed add text to action {actionId} - {addText}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f"{fName}: Cannot find action to add text {actionId}",LOG_ERROR)
+            log(str=f"{fName}: Cannot find action to add text {actionId}",logLevel=LOG_ERROR)
         if (ret):
             # Log update
             if (not Connection.addLog(actionId=actionId, logType=LOGTYPE_TEXTADDED)):
-                log(f"{fName}: Cannot add log {LOGTYPE_TEXTADDED} for action {actionId}",LOG_ERROR)
+                log(str=f"{fName}: Cannot add log {LOGTYPE_TEXTADDED} for action {actionId}",logLevel=LOG_ERROR)
         return ret
 
     # Update action buttons
     # Returns:
     #   False - error or no user or no action
     #   True - update completed successfully
-    def udpdateActionButtons(username, actionId, buttons):
+    def udpdateActionButtons(username, actionId, buttons) -> bool:
         fName = Connection.udpdateActionButtons.__name__
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot save buttons for action {actionId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot save buttons for action {actionId} - connection is not initialized",logLevel=LOG_ERROR)
             return False
         ret = False
         actionInfo = Connection.getActionInfo(actionId=actionId, username=username)
         if (actionInfo == None):
-            log(f'{fName}: cannot update action {actionId}: DB issue',LOG_ERROR)
+            log(str=f'{fName}: cannot update action {actionId}: DB issue',logLevel=LOG_ERROR)
             return ret
-        if (dbFound(actionInfo)):
+        if (dbFound(result=actionInfo)):
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = 'update actions set buttons =%(t)s where id = %(id)s'
                 try:
-                    cur.execute(query,{'t':buttons,'id':actionId})
+                    cur.execute(query=query,vars={'t':buttons,'id':actionId})
                     log(f'{fName}: Updated buttons for action: {actionId} - {buttons}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed not update title for action {actionId} - {buttons}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed not update title for action {actionId} - {buttons}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f"{fName}: Cannot find action to update buttons {actionId}",LOG_ERROR)
+            log(str=f"{fName}: Cannot find action to update buttons {actionId}",logLevel=LOG_ERROR)
         return ret
     
-    def clearActionButtons(username, actionId):
+    def clearActionButtons(username, actionId) -> bool:
         return (Connection.udpdateActionButtons(username=username,actionId=actionId, buttons=None))
 
     # Delete action - returns True/False
-    def deleteAction(actionId):
+    def deleteAction(actionId) -> bool:
         fName = Connection.deleteAction.__name__
         ret = False
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot delete action {actionId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot delete action {actionId} - connection is not initialized",logLevel=LOG_ERROR)
             return ret
         # Check that action exist
         actionsInfo = Connection.getActions(actionId=actionId)
-        if (dbFound(actionsInfo)):
+        if (dbFound(result=actionsInfo)):
             # Delete action logs first
             Connection.deleteActionLogs(actionId=actionId)
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = "DELETE from actions where id = %(a)s"
                 try:
-                    cur.execute(query, {'a':actionId})
-                    log(f'Deleted action: {actionId}')
+                    cur.execute(query=query, vars={'a':actionId})
+                    log(str=f'Deleted action: {actionId}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed delete action {actionId}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed delete action {actionId}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f'{fName}: Cannot find action to delete {actionId}',LOG_ERROR)
+            log(str=f'{fName}: Cannot find action to delete {actionId}',logLevel=LOG_ERROR)
         return ret
 
     #===============
@@ -721,7 +738,7 @@ class Connection:
     #---------------
     def parseUserData(rawUser):
         userInfo = {}
-        if (dbFound(rawUser) and (len(rawUser) == 5)):
+        if (dbFound(result=rawUser) and (len(rawUser) == 5)):
             userInfo['id'] = int(rawUser[0])
             userInfo['name'] = rawUser[1]
             userInfo['telegramid'] = rawUser[2]
@@ -740,33 +757,33 @@ class Connection:
     #   id - new user id
     def addUser(username, telegramid):
         fName = Connection.addUser.__name__
-        if (not Connection.isInitialized()):
-            log("{fName}: Cannot insert user - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str="{fName}: Cannot insert user - connection is not initialized",logLevel=LOG_ERROR)
             return None
-        ret = dbLibCheckUserName(username)
+        ret = dbLibCheckUserName(userName=username)
         if (not ret):
-            log(f"{fName}: Cannot insert user -  invalid name format",LOG_ERROR)
+            log(str=f"{fName}: Cannot insert user -  invalid name format",logLevel=LOG_ERROR)
             return None
         ret = None
         conn = Connection.getConnection()
         # Check for duplicates
-        retUser = Connection.getUserIdByName(username)
+        retUser = Connection.getUserIdByName(username=username)
         if (retUser == None): # error with DB
-            log(f'{fName}: Cannot get user from DB: {username}',LOG_ERROR)
+            log(str=f'{fName}: Cannot get user from DB: {username}',logLevel=LOG_ERROR)
             return ret
-        if (dbNotFound(retUser)):
+        if (dbNotFound(result=retUser)):
             with conn.cursor() as cur:
                 query = "INSERT INTO users (name, telegramid) VALUES (%(u)s, %(tId)s) RETURNING id"
                 try:
-                    cur.execute(query, {'u':username, 'tId': telegramid})
+                    cur.execute(query=query, vars={'u':username, 'tId': telegramid})
                     row = cur.fetchone()
                     if (row):
                         ret = row[0]
                         log(f'Inserted user: {username}')
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed insert user {username}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed insert user {username}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f'{fName}: Trying to insert duplicate user: {username}',LOG_WARNING)
+            log(str=f'{fName}: Trying to insert duplicate user: {username}',logLevel=LOG_WARNING)
             ret = retUser # Return true for now - probably wrong
         return ret
 
@@ -776,12 +793,12 @@ class Connection:
     #   id - user id
     #   NOT_FOUND - no such user
     def getUserIdByName(username):
-        ret = dbLibCheckUserName(username)
+        ret = dbLibCheckUserName(userName=username)
         if (not ret):
             return NOT_FOUND
         query = f"SELECT id FROM users WHERE name = %(name)s"
-        ret = Connection.executeQuery(query,{'name':username})
-        if (dbFound(ret)):
+        ret = Connection.executeQuery(query=query,params={'name':username})
+        if (dbFound(result=ret)):
             ret = ret[0]
         return ret
 
@@ -791,74 +808,77 @@ class Connection:
     #   {userInfo} - user info
     #   NOT_FOUND - no such user
     def getUserInfoByName(username):
-        ret = dbLibCheckUserName(username)
+        ret = dbLibCheckUserName(userName=username)
         if (not ret):
             return NOT_FOUND
         query = f"SELECT id, name, telegramid, state, state_data FROM users WHERE name = %(name)s"
-        ret = Connection.executeQuery(query,{'name':username})
-        if (dbFound(ret)):
-            ret = Connection.parseUserData(ret)
+        ret = Connection.executeQuery(query=query,params={'name':username})
+        if (dbFound(result=ret)):
+            ret = Connection.parseUserData(rawUser=ret)
         return ret
     
     # Get user state
     def getUserState(username):
         ret = Connection.getUserInfoByName(username=username)
-        if (dbFound(ret)):
+        if (dbFound(result=ret)):
             ret = ret['state']
         return ret
     
     # Set user state
     # Return: True/False
-    def setUserState(username, state, data = None):
+    def setUserState(username, state, data = None) -> bool:
         fName = Connection.setUserState.__name__
-        ret = dbLibCheckUserName(username)
+        ret = dbLibCheckUserName(userName=username)
         if (not ret):
             return False
         # Check that user exists
         userInfo = Connection.getUserInfoByName(username=username)
-        if (not dbFound(userInfo)):
-            log(f'{fName}: No such user {username}', LOG_ERROR)
+        if (not dbFound(result=userInfo)):
+            log(str=f'{fName}: No such user {username}', logLevel=LOG_ERROR)
             return False
         # Check state
-        if ((state != None) and (not dbLibCheckUserState(state))):
-            log(f'{fName}: Unknown state {state} for user {username}', LOG_ERROR)
+        if ((state != None) and (not dbLibCheckUserState(state=state))):
+            log(str=f'{fName}: Unknown state {state} for user {username}', logLevel=LOG_ERROR)
             return False
         params = {'st':state,'id':userInfo['id']}
         addQuery = ''
         addQuery = f', state_data = %(da)s'
         params['da'] = data
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f'{fName}: Failed to reconnect',logLevel=LOG_ERROR)
+            return False
         conn = Connection.getConnection()
         with conn.cursor() as cur:
             query = f'update users set state = %(st)s{addQuery} where id = %(id)s'
             try:
-                cur.execute(query, params)
-                log(f'{fName}: Updated user state: {username} - {state}')
+                cur.execute(query=query, vars=params)
+                log(str=f'{fName}: Updated user state: {username} - {state}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
-                log(f'{fName}: Failed set state {username}: {error}',LOG_ERROR)
+                log(str=f'{fName}: Failed set state {username}: {error}',logLevel=LOG_ERROR)
         return ret
 
     # Clear user state
     # Return: True/False
-    def clearUserState(username):
+    def clearUserState(username) -> bool:
         return Connection.setUserState(username=username, state=None, data=None)
 
     # Delete user - returns True/False
-    def deleteUser(userId):
+    def deleteUser(userId) -> bool:
         fName = Connection.deleteUser.__name__
         ret = False
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot delete user {userId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot delete user {userId} - connection is not initialized",logLevel=LOG_ERROR)
             return ret
         conn = Connection.getConnection()
         with conn.cursor() as cur:
             query = "DELETE from users where id = %(user)s"
             try:
-                cur.execute(query, {'user':userId})
-                log(f'Deleted user: {userId}')
+                cur.execute(query=query, vars={'user':userId})
+                log(str=f'Deleted user: {userId}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
-                log(f'{fName}: Failed delete user {userId}: {error}',LOG_ERROR)
+                log(str=f'{fName}: Failed delete user {userId}: {error}',logLevel=LOG_ERROR)
         return ret
 
     #============
@@ -866,7 +886,7 @@ class Connection:
     #------------
     def parseLogData(rawLog):
         log = {}
-        if (dbFound(rawLog) and (len(rawLog) == 5)):
+        if (dbFound(result=rawLog) and (len(rawLog) == 5)):
             log['id'] = int(rawLog[0])
             log['actionid'] = int(rawLog[1])
             log['logtype'] = rawLog[2]
@@ -878,55 +898,58 @@ class Connection:
 
     # Add log recored
     # Returns: True/False
-    def addLog(actionId, logType, comment='', noCheck=False):
+    def addLog(actionId, logType, comment='', noCheck=False) -> bool:
         fName = Connection.addLog.__name__
         # Check log type first
-        if (not dbLibCheckLogType(logType)):
-            log(f'{fName}: Incorrect log type provided {logType}', LOG_ERROR)
+        if (not dbLibCheckLogType(logType=logType)):
+            log(str=f'{fName}: Incorrect log type provided {logType}', logLevel=LOG_ERROR)
             return False
         if (not noCheck):
             # Check if action exists
             actionInfo = Connection.getActions(actionId=actionId)
-            if (dbFound(actionInfo)): # action exist
+            if (dbFound(result=actionInfo)): # action exist
                 pass
             else:
-                log(f'{fName}: Cannot find action ID to add log {actionId}', LOG_ERROR)
+                log(str=f'{fName}: Cannot find action ID to add log {actionId}', logLevel=LOG_ERROR)
                 return False
         query = '''
             insert into logs (actionid,logtype,comment,time_stamp) values (%(aId)s,%(lt)s,%(c)s,NOW())
         '''
         params = {'aId':actionId,'lt':logType,'c':comment}
         ret = False
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot add log {actionId} - connection is not initialized",logLevel=LOG_ERROR)
+            return ret
         conn = Connection.getConnection()
         with conn.cursor() as cur:
             try:
-                cur.execute(query, params)
-                log(f'Inserted log: {actionId} - {logType}')
+                cur.execute(query=query, vars=params)
+                log(str=f'Inserted log: {actionId} - {logType}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
-                log(f'{fName}: Failed insert log {actionId} - {logType}: {error}',LOG_ERROR)
+                log(str=f'{fName}: Failed insert log {actionId} - {logType}: {error}',logLevel=LOG_ERROR)
         return ret
 
     # Delete all logs for action - returns True/False
-    def deleteActionLogs(actionId, username=None):
+    def deleteActionLogs(actionId, username=None) -> bool:
         fName = Connection.deleteActionLogs.__name__
         ret = False
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot delete action logs {actionId} - connection is not initialized",LOG_ERROR)
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f"{fName}: Cannot delete action logs {actionId} - connection is not initialized",logLevel=LOG_ERROR)
             return ret
         actionInfo = Connection.getActions(username=username, actionId=actionId)
-        if (dbFound(actionInfo)): # action exist
+        if (dbFound(result=actionInfo)): # action exist
             conn = Connection.getConnection()
             with conn.cursor() as cur:
                 query = "DELETE from logs where actionid = %(aId)s"
                 try:
-                    cur.execute(query, {'aId':actionId})
-                    log(f'Deleted action logs: {actionId}')
+                    cur.execute(query=query, vars={'aId':actionId})
+                    log(str=f'Deleted action logs: {actionId}')
                     ret = True
                 except (Exception, psycopg2.DatabaseError) as error:
-                    log(f'{fName}: Failed delete action logs {actionId}: {error}',LOG_ERROR)
+                    log(str=f'{fName}: Failed delete action logs {actionId}: {error}',logLevel=LOG_ERROR)
         else:
-            log(f'{fName}: Cannot delete action logs {actionId} - no action found', LOG_ERROR)
+            log(str=f'{fName}: Cannot delete action logs {actionId} - no action found', logLevel=LOG_ERROR)
             ret = False
         return ret
     
@@ -937,21 +960,18 @@ class Connection:
     def getLogs(actionId, logType=None):
         fName = Connection.getLogs.__name__
         ret = None
-        if (not Connection.isInitialized()):
-            log(f"{fName}: Cannot get action logs {actionId} - connection is not initialized",LOG_ERROR)
-            return ret
         # Check log type first
         addQuery = ''
         params = {'aId':actionId}
         if (logType):
-            if (not dbLibCheckLogType(logType)):
+            if (not dbLibCheckLogType(logType=logType)):
                 log(f'{fName}: Incorrect log type provided {logType}', LOG_ERROR)
                 return ret
             addQuery = ' and logtype=%(lt)s'
             params['lt'] = logType
         # Check that action exists
         actionsInfo = Connection.getActions(actionId=actionId)
-        if (not dbFound(actionsInfo)): # action is there
+        if (not dbFound(result=actionsInfo)): # action is there
             log(f'{fName}: No action {actionId}', LOG_ERROR)
             return ret
         query = f'''
@@ -960,9 +980,9 @@ class Connection:
         '''
         logs = []
         retLogs = Connection.executeQuery(query=query, params=params, all=True)
-        if (dbFound(retLogs)):
+        if (dbFound(result=retLogs)):
             for rawLog in retLogs:
-                log = Connection.parseLogData(rawLog)
+                log = Connection.parseLogData(rawLog=rawLog)
                 logs.append(log)
         return logs
 
@@ -972,30 +992,33 @@ class Connection:
     # Set user state
     # Input: timedate object - for set/ None - for cancel
     # Return: True/False
-    def setReminder(username, actionId, reminder):
+    def setReminder(username, actionId, reminder) -> bool:
         fName = Connection.setReminder.__name__
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
-        if (not dbFound(actionInfo)):
-            log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+        if (not dbFound(result=actionInfo)):
+            log(str=f'{fName}: Cannot find action id {username} - {actionId}', logLevel=LOG_ERROR)
             return False
         # Check that reminder is active
         if ((actionInfo['status'] != ACTION_ACTIVE) and (reminder != None)):
-            log(f'{fName}: Cannot set reminder for NOT active action {username} - {actionId} - {reminder}', LOG_ERROR)
+            log(str=f'{fName}: Cannot set reminder for NOT active action {username} - {actionId} - {reminder}', logLevel=LOG_ERROR)
             return False
         ret = False
         params = {'r':reminder,'id':actionId}
         addQuery = ', shown=%(sh)s'
         params['sh'] = False
 
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f'{fName}: Cannot set reminder: connection is closed', logLevel=LOG_ERROR)
+            return ret
         conn = Connection.getConnection()
         with conn.cursor() as cur:
             query = f'update actions set reminder = %(r)s{addQuery} where id = %(id)s'
             try:
-                cur.execute(query, params)
+                cur.execute(query=query, vars=params)
                 log(f'{fName}: Reminder set for user {username}, action {actionId}, reminder {reminder}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
-                log(f'{fName}: Failed set reminder for {username} - {actionId} - {reminder}: {error}',LOG_ERROR)
+                log(str=f'{fName}: Failed set reminder for {username} - {actionId} - {reminder}: {error}',logLevel=LOG_ERROR)
         if (ret):
             # Add log
             if (reminder == None):
@@ -1007,39 +1030,42 @@ class Connection:
     # Mark reminder as shown
     # Input: username, actionId
     # Return: True/False
-    def markReminderAsShown(username, actionId):
+    def markReminderAsShown(username, actionId) -> bool:
         fName = Connection.markReminderAsShown.__name__
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
-        if (not dbFound(actionInfo)):
-            log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+        if (not dbFound(result=actionInfo)):
+            log(str=f'{fName}: Cannot find action id {username} - {actionId}', logLevel=LOG_ERROR)
             return False
         # Check that reminder is active
         if (actionInfo['status'] != ACTION_ACTIVE or actionInfo['reminder'] == None):
-            log(f'{fName}: Cannot mark reminder as shown for NOT active action {username} - {actionId}', LOG_ERROR)
+            log(str=f'{fName}: Cannot mark reminder as shown for NOT active action {username} - {actionId}', logLevel=LOG_ERROR)
             return False
         ret = False
         params = {'sh':True,'id':actionId}
+        if (not Connection.isActive() and not Connection.reconnect()):
+            log(str=f'{fName}: Cannot mark reminder as shown: connection is closed', logLevel=LOG_ERROR)
+            return ret
         conn = Connection.getConnection()
         with conn.cursor() as cur:
             query = f'update actions set shown = %(sh)s where id = %(id)s'
             try:
-                cur.execute(query, params)
-                log(f'{fName}: Reminder marked as shown for user {username}, action {actionId}')
+                cur.execute(query=query, vars=params)
+                log(str=f'{fName}: Reminder marked as shown for user {username}, action {actionId}')
                 ret = True
             except (Exception, psycopg2.DatabaseError) as error:
-                log(f'{fName}: Failed mark reminder as shown for {username} - {actionId}: {error}',LOG_ERROR)
+                log(str=f'{fName}: Failed mark reminder as shown for {username} - {actionId}: {error}',logLevel=LOG_ERROR)
         if (ret):
             # Add log
             Connection.addLog(actionId=actionId,logType=LOGTYPE_REMINDERSHOWN)
         return ret
 
-    def clearReminder(username, actionId):
+    def clearReminder(username, actionId) -> bool:
         fName = Connection.clearReminder.__name__
         ret = Connection.setReminder(username=username, actionId=actionId, reminder=None)
         if (ret):
-            log(f'{fName}: Reminder cleared for user {username} and action {actionId}')
+            log(str=f'{fName}: Reminder cleared for user {username} and action {actionId}')
         else:
-            log(f'{fName}: Error clear reminder for user {username} and action {actionId}', LOG_ERROR)
+            log(str=f'{fName}: Error clear reminder for user {username} and action {actionId}', logLevel=LOG_ERROR)
         return ret
     
     # Returns:
@@ -1048,15 +1074,15 @@ class Connection:
     def getReminder(username, actionId):
         fName = Connection.getReminder.__name__
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
-        if (not dbFound(actionInfo)):
-            log(f'{fName}: Cannot find action id {username} - {actionId}', LOG_ERROR)
+        if (not dbFound(result=actionInfo)):
+            log(str=f'{fName}: Cannot find action id {username} - {actionId}', logLevel=LOG_ERROR)
             return None
         query = 'select reminder from actions where id=%(aId)s'
         params = {'aId':actionId}
         ret = None
         reminder = Connection.executeQuery(query=query, params=params)
-        if (dbFound(reminder)):
+        if (dbFound(result=reminder)):
             ret = reminder[0]
         else:
-            log(f'{fName}: Cannot get reminder for user {username}, action {actionId}', LOG_ERROR)
+            log(str=f'{fName}: Cannot get reminder for user {username}, action {actionId}', logLevel=LOG_ERROR)
         return ret
