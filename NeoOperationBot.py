@@ -512,7 +512,7 @@ class NeoOperationBot:
             actionId = int(userInfo['state_data'])
             actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
             if (not dbFound(result=actionInfo)):
-                log(f'{fName}: Cannot find action id {actionId} for user {username}', logLevel=LOG_ERROR)
+                log(str=f'{fName}: Cannot find action id {actionId} for user {username}', logLevel=LOG_ERROR)
                 self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
                 return True
             # update title
@@ -693,47 +693,47 @@ class NeoOperationBot:
         try:
             actionId = int(dataPayload[1])
         except:
-            log(f'{fName}: Incorrect actionId provided: {data}',LOG_ERROR)
+            log(str=f'{fName}: Incorrect actionId provided: {data}',logLevel=LOG_ERROR)
             return None
         actionInfo = Connection.getActionInfo(username=username, actionId=actionId)
-        if (not dbFound(actionInfo)):
-            log(f'{fName}: Cannot find actionId provided: {username} - {actionId}',LOG_ERROR)
+        if (not dbFound(result=actionInfo)):
+            log(str=f'{fName}: Cannot find actionId provided: {username} - {actionId}',logLevel=LOG_ERROR)
             return None
         return actionInfo
 
-    def actionButtonHandler(self, callback:types.CallbackQuery):
+    def actionButtonHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.actionButtonHandler.__name__
         telegramid = callback.from_user.id
         username = callback.from_user.username
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
-            log(f'{fName}: Cannot get action from data: {data}',LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot get action from data: {data}',logLevel=LOG_ERROR)
             return
         showActionMenu(bot = self.bot, actionInfo=actionInfo,telegramid=telegramid)
 
-    def cmdNewActionHandler(self, message:types.Message):
+    def cmdNewActionHandler(self, message:types.Message) -> None:
         fName = self.cmdNewActionHandler.__name__
         if (not NeoOperationBot.isInitialized()):
-            log(f'{fName}: Bot is not initialized', LOG_ERROR)
+            log(str=f'{fName}: Bot is not initialized', logLevel=LOG_ERROR)
             return
-        self.sendMessage(message.from_user.id, f"Пожалуйста, введите заголовок и текст задачи (разделитель '{TITLETEXT_SEPARATOR}'):")
-        Connection.setUserState(message.from_user.username, STATE_ACTIONTEXT)
+        self.sendMessage(telegramid=message.from_user.id, text=f"Пожалуйста, введите заголовок и текст задачи (разделитель '{TITLETEXT_SEPARATOR}'):")
+        Connection.setUserState(username=message.from_user.username, state=STATE_ACTIONTEXT)
 
-    def cmdShowRemindersHandler(self, callback:types.Message):
+    def cmdShowRemindersHandler(self, callback:types.Message) -> None:
         username = callback.from_user.username
         telegramid = callback.from_user.id
         # Get all active actions
         actions = Connection.getActionsWithShownExpiredReminders(username=username)
         if (len(actions) == 0):
             # No active actions
-            self.sendMessage(telegramid, f'У вас нет активных задач с истекшим напоминанием. Создайте при помощи {CMD_NEWACTION}')
+            self.sendMessage(telegramid=telegramid, text=f'У вас нет активных задач с истекшим напоминанием. Создайте при помощи {CMD_NEWACTION}')
         else:
             keyboard = types.InlineKeyboardMarkup(); # keyboard
             question = 'Выберите задачу для обработки:'
@@ -743,38 +743,38 @@ class NeoOperationBot:
                     callback_data=f'{CALLBACK_ACTION_TAG}{action["id"]}'
                 )
                 keyboard.add(key)
-            self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
+            self.bot.send_message(chat_id=telegramid, text=question, reply_markup=keyboard)
 
-    def cmdShowActionsHandler(self, message:types.Message):
+    def cmdShowActionsHandler(self, message:types.Message) -> None:
         username = message.from_user.username
         telegramid = message.from_user.id
         # Get all active actions
         actions = Connection.getActions(username=username, active=True)
         if (len(actions) == 0):
             # No active actions
-            self.sendMessage(telegramid, f'У вас нет активных задач. Создайте при помощи {CMD_NEWACTION}')
+            self.sendMessage(telegramid=telegramid, text=f'У вас нет активных задач. Создайте при помощи {CMD_NEWACTION}')
         else:
             question = 'Выберите задачу для обработки:'
-            keyboard = self.getActionsKeyboard(actions)
-            self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
+            keyboard = self.getActionsKeyboard(actions=actions)
+            self.bot.send_message(chat_id=telegramid, text=question, reply_markup=keyboard)
 
-    def searchActionsHandler(self, message:types.Message, state):
+    def searchActionsHandler(self, message:types.Message, state) -> None:
         fName = self.searchActionsHandler.__name__
         username = message.from_user.username
         telegramid = message.from_user.id
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         if (message.text == None):
-            log(f'{fName}: Empty message text.', LOG_ERROR)
-            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+            log(str=f'{fName}: Empty message text.', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
             return
         text_to_search = message.text
-        log(f'{fName} invoked with params state={state}, text={text_to_search}',LOG_DEBUG)
+        log(str=f'{fName} invoked with params state={state}, text={text_to_search}',logLevel=LOG_DEBUG)
         # Check state
         if (not dbLibCheckUserState(state=state)):
-            log(f'{fName}: Incorrect state provided: {state}', LOG_ERROR)
+            log(str=f'{fName}: Incorrect state provided: {state}', logLevel=LOG_ERROR)
             self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
             return
         status = ACTION_ACTIVE
@@ -784,13 +784,13 @@ class NeoOperationBot:
         actions = Connection.searchActions(textToSearch=text_to_search, username=username, status=status)
         if (len(actions) == 0):
             # No active actions
-            self.sendMessage(telegramid, f'Не найдено ни одной задачи. Попробуйте изменить условие поиска.')
+            self.sendMessage(telegramid=telegramid, text=f'Не найдено ни одной задачи. Попробуйте изменить условие поиска.')
         else:
             question = 'Список задач:'
             keyboard = self.getActionsKeyboard(actions=actions)
-            self.bot.send_message(telegramid, text=question, reply_markup=keyboard)
+            self.bot.send_message(chat_id=telegramid, text=question, reply_markup=keyboard)
 
-    def getActionsKeyboard(self, actions):
+    def getActionsKeyboard(self, actions) -> types.InlineKeyboardMarkup:
         keyboard = types.InlineKeyboardMarkup(); # keyboard
         for action in actions:
             remTxt = ''
@@ -803,92 +803,92 @@ class NeoOperationBot:
             keyboard.add(key)
         return keyboard
 
-    def activateActionHandler(self, callback:types.CallbackQuery):
+    def activateActionHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.activateActionHandler.__name__
         username = callback.from_user.username
         telegramid = callback.from_user.id
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract action from callback data {data}',LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot extract action from callback data {data}',logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
         # Complete action
         ret = Connection.activateAction(actionId=actionId, username=username)
         if (ret):
             # Remove keyboard if set
-            self.removeActionKeyboard(actionInfo['buttons'])
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons'])
             Connection.clearActionButtons(username=username,actionId=actionId)
-            log(f'{fName}: Action {actionId} activated successfully')
-            self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" реактивирована.')
+            log(str=f'{fName}: Action {actionId} activated successfully')
+            self.sendMessage(telegramid=telegramid, text=f'Задача "{actionInfo["title"]}" реактивирована.')
         else:
-            log(f'{fName}: Cannot activate {actionId} action', LOG_ERROR)
-            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+            log(str=f'{fName}: Cannot activate {actionId} action', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
 
-    def completeActionHandler(self, callback:types.CallbackQuery):
+    def completeActionHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.completeActionHandler.__name__
         username = callback.from_user.username
         telegramid = callback.from_user.id
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract action infor from {data}',LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot extract action infor from {data}',logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
         # Complete action
         ret = Connection.completeAction(actionId=actionId, username=username)
         if (ret):
             # Remove keyboard if set
-            self.removeActionKeyboard(actionInfo['buttons'])
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons'])
             Connection.clearActionButtons(username=username,actionId=actionId)
-            log(f'{fName}: Action {actionId} has been completed')
-            self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" помечена выполненой. Вы - молодец!')
+            log(str=f'{fName}: Action {actionId} has been completed')
+            self.sendMessage(telegramid=telegramid, text=f'Задача "{actionInfo["title"]}" помечена выполненой. Вы - молодец!')
         else:
-            log(f'{fName}: Cannot complete {actionId} action', LOG_ERROR)
-            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+            log(str=f'{fName}: Cannot complete {actionId} action', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
 
-    def cancelActionHandler(self, callback:types.CallbackQuery):
+    def cancelActionHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.cancelActionHandler.__name__
         telegramid = callback.from_user.id
         username = callback.from_user.username
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract action info from {data}', LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot extract action info from {data}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
         ret = Connection.cancelAction(actionId=actionId, username=username)
         if (ret):
             # Remove keyboard if set
-            self.removeActionKeyboard(actionInfo['buttons'])
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons'])
             Connection.clearActionButtons(username=username,actionId=actionId)
-            log(f'{fName}: Action {actionId} has been cancelled successfully')
-            self.sendMessage(telegramid, f'Задача "{actionInfo["title"]}" отменена.')
+            log(str=f'{fName}: Action {actionId} has been cancelled successfully')
+            self.sendMessage(telegramid=telegramid, text=f'Задача "{actionInfo["title"]}" отменена.')
         else:
-            log(f'{fName}: Cannot cancel {actionId} action', LOG_ERROR)
-            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+            log(f'{fName}: Cannot cancel {actionId} action', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
 
     # If reminder is not provider set it to the next day
     # Returns: True/False
-    def setReminder(self, actionInfo, reminder=None):
+    def setReminder(self, actionInfo, reminder=None) -> bool:
         fName = self.setReminder.__name__
         username = actionInfo['username']
         telegramid = actionInfo['telegramid']
@@ -898,9 +898,9 @@ class NeoOperationBot:
             reminder = getNextReminder(daysToDelay=1)
         ret = Connection.setReminder(username=username, actionId=actionId, reminder=reminder)
         if (ret):
-            rTxt = self.getTimeDateTxt(reminder)
+            rTxt = self.getTimeDateTxt(reminder=reminder)
             # Remove keyboard if set
-            self.removeActionKeyboard(actionInfo['buttons'])
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons'])
             Connection.clearActionButtons(username=username,actionId=actionId)
             log(str=f'{fName}: Reminder for action {actionId} set to {rTxt}')
             self.sendMessage(telegramid=telegramid, text=f'Напоминание для задачи "{actionInfo["title"]}" установлено на {rTxt}.')
@@ -937,30 +937,30 @@ class NeoOperationBot:
             self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract action info from "{data}"', LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(f'{fName}: Cannot extract action info from "{data}"', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         actionId = actionInfo['id']
         ret = Connection.clearReminder(username=username, actionId=actionId)
         if (ret):
             # Remove keyboard if set
-            self.removeActionKeyboard(actionInfo['buttons'])
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons'])
             Connection.clearActionButtons(username=username,actionId=actionId)
-            log(f'{fName}: Reminder cancelled for {actionId} action')
-            self.sendMessage(telegramid, f'Напоминание для задачи {actionInfo["title"]} удалено.')
+            log(str=f'{fName}: Reminder cancelled for {actionId} action')
+            self.sendMessage(telegramid=telegramid, text=f'Напоминание для задачи {actionInfo["title"]} удалено.')
         else:
-            log(f'{fName}: Cannot cancel reminder for action {actionId} and data {data}', LOG_ERROR)
-            self.sendMessage(telegramid, DEFAULT_ERROR_MESSAGE)
+            log(str=f'{fName}: Cannot cancel reminder for action {actionId} and data {data}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
 
-    def removeActionKeyboard(self, keyboardInfo:str):
+    def removeActionKeyboard(self, keyboardInfo:str) -> None:
         fName = self.removeActionKeyboard.__name__
         if (keyboardInfo):
             res = keyboardInfo.split('|')
             if (len(res) != 3):
-                log(f'{fName}: error getting messages and chat: {keyboardInfo}', LOG_ERROR)
+                log(f'{fName}: error getting messages and chat: {keyboardInfo}', logLevel=LOG_ERROR)
                 return
             message_id = int(res[0])
             chat_id = int(res[1])
@@ -968,93 +968,93 @@ class NeoOperationBot:
             self.bot.delete_message(message_id=messageInfo_id, chat_id=chat_id)
             self.bot.delete_message(message_id=message_id, chat_id=chat_id)
 
-    def textAddHandler(self, callback:types.CallbackQuery):
+    def textAddHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.textAddHandler.__name__
         telegramid = callback.from_user.id
         username = callback.from_user.username
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract action info from {data}', LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot extract action info from {data}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         title = actionInfo['title']
         # save user state and data
         ret = Connection.setUserState(username=username, state=STATE_ACTIONTEXTADD, data=actionInfo['id'])
         if (not ret):
-            log(f'{fName}: Cannot save state {STATE_ACTIONTEXTADD} and data {actionInfo["id"]} for {username}',LOG_ERROR)
+            log(str=f'{fName}: Cannot save state {STATE_ACTIONTEXTADD} and data {actionInfo["id"]} for {username}',logLevel=LOG_ERROR)
             self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
         else:
-            self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
-            self.sendMessage(telegramid, f'Что вы хотите добавить к задаче "{title}" ("/q" отмена):')
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons']) # Remove action menu
+            self.sendMessage(telegramid=telegramid, text=f'Что вы хотите добавить к задаче "{title}" ("/q" отмена):')
 
-    def cmdSearchActionsHandler(self, message:types.Message, state):
+    def cmdSearchActionsHandler(self, message:types.Message, state) -> None:
         fName = self.cmdSearchActionsHandler.__name__
         telegramid = message.from_user.id
         username = message.from_user.username
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         # Check state first
         if (not dbLibCheckUserState(state=state)):
-            log(f'{fName}: Incorrect state provided: {state}', LOG_ERROR)
+            log(str=f'{fName}: Incorrect state provided: {state}', logLevel=LOG_ERROR)
             self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
             return
         ret = Connection.setUserState(username=username, state=state)
         if (not ret):
-            log(f'{fName}: Cannot save state {state} for {username}',LOG_ERROR)
+            log(str=f'{fName}: Cannot save state {state} for {username}',logLevel=LOG_ERROR)
             self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
         else:
-            self.sendMessage(telegramid, f'Введите текст для поиска в заголовке и/или в описании задачи:')
+            self.sendMessage(telegramid=telegramid, text=f'Введите текст для поиска в заголовке и/или в описании задачи:')
 
-    def titleChangeActionHandler(self, callback:types.CallbackQuery):
+    def titleChangeActionHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.titleChangeActionHandler.__name__
         telegramid = callback.from_user.id
         username = callback.from_user.username
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract user info from "{data}"',LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot extract user info from "{data}"',logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         title = actionInfo['title']
         # save user state and data
         ret = Connection.setUserState(username=username, state=STATE_ACTIONTITLECHANGE, data=actionInfo['id'])
         if (not ret):
-            log(f'{fName}: Cannot save state {STATE_ACTIONTITLECHANGE} and data {actionInfo["id"]} for {username}',LOG_ERROR)
+            log(str=f'{fName}: Cannot save state {STATE_ACTIONTITLECHANGE} and data {actionInfo["id"]} for {username}',logLevel=LOG_ERROR)
             self.sendMessage(telegramid=telegramid, text=DEFAULT_ERROR_MESSAGE)
         else:
-            self.removeActionKeyboard(actionInfo['buttons']) # Remove action menu
-            self.sendMessage(telegramid, f'Введите новый заголовок для задачи "{title}" ("/q" отмена):')
+            self.removeActionKeyboard(keyboardInfo=actionInfo['buttons']) # Remove action menu
+            self.sendMessage(telegramid=telegramid, text=f'Введите новый заголовок для задачи "{title}" ("/q" отмена):')
 
-    def hideMenuHandler(self, callback:types.CallbackQuery):
+    def hideMenuHandler(self, callback:types.CallbackQuery) -> None:
         fName = self.hideMenuHandler.__name__
         telegramid = callback.from_user.id
         username = callback.from_user.username
         if (not self.checkUser(username=username)):
-            log(f'{fName}: userCheck error - {username}', LOG_ERROR)
-            self.sendMessage(telegramid, f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
+            log(str=f'{fName}: userCheck error - {username}', logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text=f'Пользователь не зарегистрирован. Пожалуйста, введите "{CMD_START}"')
             return
         data = callback.data
-        self.bot.answer_callback_query(callback.id)
+        self.bot.answer_callback_query(callback_query_id=callback.id)
         actionInfo = self.extractActionInfo(username=username, data=data)
         if (not actionInfo):
-            log(f'{fName}: Cannot extract user info from "{data}"',LOG_ERROR)
-            self.sendMessage(telegramid, 'Ошибка обработки сообщения. Попробуйте еще раз.')
+            log(str=f'{fName}: Cannot extract user info from "{data}"',logLevel=LOG_ERROR)
+            self.sendMessage(telegramid=telegramid, text='Ошибка обработки сообщения. Попробуйте еще раз.')
             return
         # Remove keyboard if set
-        self.removeActionKeyboard(actionInfo['buttons'])
+        self.removeActionKeyboard(keyboardInfo=actionInfo['buttons'])
         Connection.clearActionButtons(username=username,actionId=actionInfo['id'])
         log(f'{fName}: Removed menu for action {actionInfo["id"]} for {username}')
 
