@@ -568,6 +568,8 @@ class NeoOperationBot:
                 messageText = message.caption
             else:
                 log(str=f'{fName}: Unknown message format received "{message}"', logLevel=LOG_WARNING)
+        else:
+            messageText = message.text
         return messageText
 
     def cmdStartHandler(self, message:types.Message) -> None:
