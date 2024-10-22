@@ -432,17 +432,20 @@ class NeoOperationBot:
         fName = self.getFromTxt.__name__
         fromTxt = None
         # Check fromard message
-        if (message.forward_origin):
+        forward_origin = message.forward_origin
+        if (forward_origin):
             try:
-                print(message)
-                fromTxt = message.forward_origin.sender_user.username
+                if (forward_origin.type) == 'hidden_user':
+                    fromTxt = forward_origin.sender_user_name
+                else:
+                    fromTxt = forward_origin.sender_user.username
             except:
                 pass
             if (not fromTxt): # Not found sender - check chat
                 try: 
-                    fromTxt = message.forward_origin.chat.title                
+                    fromTxt = forward_origin.chat.title                
                 except:
-                    log(str=f'{fName}: Cannot get forward_origin: {message.forward_origin}',logLevel=LOG_WARNING)
+                    log(str=f'{fName}: Cannot get forward_origin: {forward_origin}',logLevel=LOG_WARNING)
                     fromTxt = "!!!anonymous!!!" # Default unknown sender
         return fromTxt
 
