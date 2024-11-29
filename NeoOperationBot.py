@@ -369,7 +369,7 @@ class NeoOperationBot:
         if (not NeoOperationBot.isInitialized()):
             log(str=f'Bot is not initialized - cannot start', logLevel=LOG_ERROR)
             return
-        log(f'Starting bot...')
+        log(str=f'Starting bot...')
         while(True):
             try:
                 self.bot.infinity_polling()
@@ -391,7 +391,7 @@ class NeoOperationBot:
     def messageHandler(self, message:types.Message) -> None:
         fName = self.messageHandler.__name__
         if (not NeoOperationBot.isInitialized()):
-            log(f'Bot is not initialized - cannot start', logLevel=LOG_ERROR)
+            log(str=f'{fName}: Bot is not initialized - cannot start', logLevel=LOG_ERROR)
             return
         # Check if photo recieved
         if (message.text != None):
