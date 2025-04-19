@@ -85,7 +85,7 @@ def getDefaultReminderTime():
 
 def getCurrentDateTime() -> str:
     tzinfo=ZoneInfo(key='Europe/Moscow')
-    startTime = dt.now(tz=tzinfo).strftime("%d-%m-%Y %H:%M:%S")
+    startTime = dt.now(tz=tzinfo).strftime(format="%d-%m-%Y %H:%M:%S")
     return startTime
 
 # Get next reminder datetime
@@ -221,7 +221,7 @@ def getReminderText(actionInfo) -> str:
         '''
     return text
 
-def getActionStatusText(actionInfo):
+def getActionStatusText(actionInfo) -> str:
     statusTxt = 'Активная \U0001F4A5'
     status = actionInfo['status']
     if (status == ACTION_COMPLETED):
@@ -242,22 +242,26 @@ def getActionInfoText(actionInfo) -> str:
     '''
     return text
 
-def showActionMenu(bot:telebot.TeleBot, actionInfo, telegramid, addText='') -> None:
+def showActionMenu(bot:telebot.TeleBot, actionInfo, telegramid, addText='') -> bool:
     username = actionInfo['username']
     actionId = actionInfo['id']
     # Send action info
-    actionInfoText = addText + getActionInfoText(actionInfo=actionInfo)
-    actionInfoMessage = bot.send_message(chat_id=telegramid, text=actionInfoText) # Save message ID
-    keyboard = getActionMenu(actionId=actionId, active=(actionInfo['status'] == ACTION_ACTIVE))
-    message_sent = bot.send_message(chat_id=telegramid,
-                                            text='Выберите действие с задачей:',
-                                            reply_markup=keyboard,
-                                            parse_mode='MarkdownV2')
-    actionInfoMessageId = actionInfoMessage.id
+    try:
+        actionInfoText = addText + getActionInfoText(actionInfo=actionInfo)
+        actionInfoMessage = bot.send_message(chat_id=telegramid, text=actionInfoText) # Save message ID
+        keyboard = getActionMenu(actionId=actionId, active=(actionInfo['status'] == ACTION_ACTIVE))
+        message_sent = bot.send_message(chat_id=telegramid,
+                                                text='Выберите действие с задачей:',
+                                                reply_markup=keyboard,
+                                                parse_mode='MarkdownV2')
+        actionInfoMessageId = actionInfoMessage.id
+    except Exception as e:
+        log(str='Error while sending action info: ' + str(object=e), level=LOG_ERROR)
+        return False
     # Save chat_id and message_id to hide later
     message_id = message_sent.id
     chat_id = telegramid
-    Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}|{actionInfoMessageId}')
+    return Connection.udpdateActionButtons(username=username,actionId=actionId,buttons=f'{message_id}|{chat_id}|{actionInfoMessageId}')
 
 #=====================
 # Bot class
@@ -432,8 +436,8 @@ class NeoOperationBot:
         fName = self.getFromTxt.__name__
         fromTxt = None
         # Check fromard message
-        forward_origin = message.forward_origin
-        if (forward_origin):
+        if (message.forward_origin):
+            forward_origin = message.forward_origin
             try:
                 if (forward_origin.type) == 'hidden_user':
                     fromTxt = forward_origin.sender_user_name

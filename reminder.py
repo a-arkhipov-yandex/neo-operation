@@ -17,15 +17,16 @@ def reminderTask(bot:telebot.TeleBot) -> None:
         actions = Connection.getActionsWithExpiredReminders()
         if (not actions):
             continue
+        handled = 0
         for actionInfo in actions:
             actionId = actionInfo['id']
             username = actionInfo['username']
             telegramid = actionInfo['telegramid']
             reminderText = "\U00002757 Reminder:"
-            showActionMenu(bot=bot, actionInfo=actionInfo, telegramid=telegramid, addText=reminderText)
-            # Mark reminder as shown
-            Connection.markReminderAsShown(username=username,actionId=actionId)
+            if (showActionMenu(bot=bot, actionInfo=actionInfo, telegramid=telegramid, addText=reminderText)):
+                # Mark reminder as shown
+                Connection.markReminderAsShown(username=username,actionId=actionId)
+            handled += 1
         lenReminders = len(actions)
-        if (lenReminders != 0):
-            log(str=f'{fName}: Handled {lenReminders} reminders. Sleeping...')
+        log(str=f'{fName}: Got {lenReminders} reminders. Handled {lenReminders} reminders. Sleeping...')
     log(str=f'{fName}: Reminder thread stopped')
